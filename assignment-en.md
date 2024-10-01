@@ -127,5 +127,3 @@ RFC 3596
 Sample code examples on the Moodle of the ISA course.
 
 ---
-
-This translation maintains the structure and formatting of your original markdown file.
