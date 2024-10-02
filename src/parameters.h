@@ -8,6 +8,7 @@
 #include <iostream>
 #include <cstdlib>
 #include <unistd.h>
+#include <stdlib.h> // for exit()
 
 struct parameters {
     std::string interface;

@@ -1,5 +1,9 @@
 cmake-build-debug/
 CMakeLists.txt
+build/
 .idea/
 *.o
 dns-monitor
+.vscode/
+wslapps
+test.sh

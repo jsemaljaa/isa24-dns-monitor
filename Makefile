@@ -1,18 +1,18 @@
-# Makefile
+# Makefile for dns-monitor
 
 CC = g++
 CFLAGS = -Wall -Wextra -pedantic
+TARGET = dns-monitor
 
-all: dns-monitor
+# files
+SRCFILES = $(wildcard src/*.cpp)
 
-dns-monitor: dns-monitor.o parameters.o
-	$(CC) $(CFLAGS) -o dns-monitor dns-monitor.o parameters.o
+all: $(TARGET)
 
-dns-monitor.o: dns-monitor.cpp dns-monitor.h
-	$(CC) $(CFLAGS) -c dns-monitor.cpp
+# $(CC) $(CFLAGS) $^ -o $@ -I"C:\Program Files\WinPcapDev\Include" -I. -lpcap
 
-parameters.o: parameters.cpp parameters.h
-	$(CC) $(CFLAGS) -c parameters.cpp
+$(TARGET): $(SRCFILES)
+	$(CC) $(CFLAGS) $^ -o $@ -I. -lpcap
 
 clean:
 	rm -f dns-monitor *.o

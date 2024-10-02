@@ -32,7 +32,7 @@ parameters parse(int argc, char* argv[]) {
     }
 
     // Ensure either interface or pcap file is provided (but not both)
-    if (p.interface.empty() && p.pcapfile.empty() || (!p.interface.empty() && !p.pcapfile.empty())) {
+    if ((p.interface.empty() && p.pcapfile.empty()) || (!p.interface.empty() && !p.pcapfile.empty())) {
         std::cerr << "Error: You must specify either an interface (-i) or a PCAP file (-p). (but not both)\n";
         exit(EXIT_FAILURE);
     }
