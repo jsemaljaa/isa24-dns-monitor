@@ -7,7 +7,7 @@
 // g++ -o dns-monitor dns-monitor.cpp -lpcap
 
 void print_debug(const char *message) {
-    std::cout << message << '\n';
+    std::cout << message << std::endl;
 }
 
 parameters get_app_config(int argc, char *argv[]) {
@@ -36,50 +36,97 @@ parameters get_app_config(int argc, char *argv[]) {
 }
 
 void print_udphdr(struct udphdr *udph) {
-    std::cout << "UDP Header:" << '\n';
-    std::cout << '\t' << "Source port: " << ntohs(udph->source) << '\n';
-    std::cout << '\t' << "Destination port: " << ntohs(udph->dest) << '\n';
-    std::cout << '\t' << "Length: " << ntohs(udph->len) << '\n';
-    std::cout << '\t' << "Checksum: " << ntohs(udph->check) << '\n';
+    std::cout << "UDP Header:" << std::endl;
+    std::cout << '\t' << "Source port: " << ntohs(udph->source) << std::endl;
+    std::cout << '\t' << "Destination port: " << ntohs(udph->dest) << std::endl;
+    std::cout << '\t' << "Length: " << ntohs(udph->len) << std::endl;
+    std::cout << '\t' << "Checksum: " << ntohs(udph->check) << std::endl;
 }
 
-void display_dns_packet(struct dns_header *dnshdr, bool verbose) {
+void display_dns_packet(struct dns_header *dnshdr, struct udphdr *udph, struct ip *iph, bool verbose) {
+    time_t now = time(0);
+    tm *t = localtime(&now);
+    auto tmstmp = std::put_time(t, "%Y-%m-%d %H:%M:%S");
+
+    char src_ip_str[INET_ADDRSTRLEN];
+    char dst_ip_str[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(iph->ip_src), src_ip_str, INET_ADDRSTRLEN);
+    inet_ntop(AF_INET, &(iph->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
+
+    // Extract individual flags from the DNS flags field
+
     if (verbose) {
+        std::cout << "Timestamp: " << tmstmp << std::endl;
+        std::cout << "SrcIP: " << src_ip_str << std::endl;
+        std::cout << "DstIP: " << dst_ip_str << std::endl;
+        std::cout << "SrcPort: UDP/" << ntohs(udph->source) << std::endl;
+        std::cout << "DstPort: UDP/" << ntohs(udph->dest) << std::endl;
+        std::cout << "Identifier: " << std::hex << std::uppercase << "0x" << dnshdr->id << std::endl;
+        std::cout << "Flags: QR=" << dnshdr->qr << ", OPCODE=" << dnshdr->opcode << ", AA=" << dnshdr->AA << ", TC=" << dnshdr->TC << ", RD=" << dnshdr->RD << ", RA=" << dnshdr->RA << ", AD=" << dnshdr->AD << ", CD=" << dnshdr->CD << ", RCODE=" << dnshdr->rcode << std::endl;
+        // Flags: QR=1, OPCODE=0, AA=1, TC=0, RD=1, RA=1, AD=0, CD=0, RCODE=0
+
+        
+
+        // also add answers
+        // [Question Section]
+        // google.com. IN A
+
+        // [Answer Section]
+        // google.com. 300 IN A 142.250.183.142
+
+        // [Authority Section]
+        // google.com. 86400 IN NS ns1.google.com.
+        // google.com. 86400 IN NS ns2.google.com.
+
+        // [Additional Section]
+        // ns1.google.com. 86400 IN A 216.239.32.10
+        // ns2.google.com. 86400 IN A 216.239.34.10
+        // ====================
+
+
         // id - hex 16bit
-        std::cout << '\t' << "ID " << dnshdr->id << '\n';
-        std::cout << '\t' << "Flags " << dnshdr->flags << '\n';
-        std::cout << '\t' << "Questions count " << dnshdr->qd_count << '\n';
-        std::cout << '\t' << "Answers count " << dnshdr->an_count << '\n';
-        std::cout << '\t' << "Authority count " << dnshdr->ns_count << '\n';
-        std::cout << '\t' << "Additionals count " << dnshdr->ar_count << '\n';
+        // std::cout << '\t' << "ID " << dnshdr->id << std::endl;
+        // std::cout << '\t' << "Flags " << dnshdr->flags << std::endl;
+        std::cout << '\t' << "Questions count " << dnshdr->qd_count << std::endl;
+        std::cout << '\t' << "Answers count " << dnshdr->an_count << std::endl;
+        std::cout << '\t' << "Authority count " << dnshdr->ns_count << std::endl;
+        std::cout << '\t' << "Additionals count " << dnshdr->ar_count << std::endl;
+        std::cout << "====================" << std::endl;
     }
 }
 
 void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
 
     // https://github.com/packetzero/dnssniffer/blob/master/src/main.cpp#L166C3-L166C114
-    if (header->caplen < header->len) printf("Truncated packet %d -> %d bytes\n", header->len, header->caplen);
 
-    struct iphdr *iph = (struct iphdr *)(packet + SIZE_ETHERNET_HDR); // Skip 14 bytes of ethernet header 
-    int ip_header_len = iph->ihl * 4;
+    std::cout << "Caplen: " << header->caplen << " Len: " << header->len << std::endl;
 
-    struct udphdr *udph = (struct udphdr *)(packet + SIZE_ETHERNET_HDR + ip_header_len);
+    if (header->caplen < header->len) {
+        std::cout <<" Truncated packet" << header->len << "/" << header->caplen << "bytes" << std::endl;
+    }
 
-    struct dns_header *dnshdr = (struct dns_header *)(packet + ip_header_len + sizeof(struct udphdr));
+    struct ip *iph = (struct ip *)(packet + SIZE_ETHERNET_HDR); // Skip 14 bytes of ethernet header 
 
-    print_udphdr(udph);
+    struct udphdr *udph = (struct udphdr *)(packet + SIZE_ETHERNET_HDR + iph->ip_hl * 4);
+
+    std::cout << std::endl << "UDP: " << sizeof(struct udphdr) << "b IP: " << iph->ip_hl * 4 << "b"<< std::endl;
+
+    struct dns_header *dnshdr = (struct dns_header *)(packet + iph->ip_hl * 4 + sizeof(struct udphdr));
+
+    // print_udphdr(udph);
     
     // dig -p 53 domain.com @8.8.8.8
 
     // 17 corresponds to UDP protocol
-    // if (iph->protocol == 17) {
-        std::cout << "### CAPTURED DNS HEADER ###" << '\n';
-        display_dns_packet(dnshdr, true);
-    // }
+    display_dns_packet(dnshdr, udph, iph, true);
+
 }
 
 
 int main(int argc, char* argv[]) {
+
+    std::cout << (__BYTE_ORDER == __BIG_ENDIAN ? "BIG_ENDIAN" : "LITTLE_ENDIAN") << std::endl;
+
     parameters config = get_app_config(argc, argv);
 
     pcap_t *handle = nullptr;
@@ -115,7 +162,7 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    std::cout << filter << '\n';
+    std::cout << "Applied filter: " << filter << std::endl;
 
     pcap_loop(handle, -1, packet_handler, nullptr);
 
