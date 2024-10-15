@@ -6,7 +6,20 @@
 #define DNS_HEADER_H
 
 #include <cstdint>
+// Networking
+#include <pcap.h>
+#include <netinet/udp.h>
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
+#include <arpa/inet.h>
+#include <netinet/if_ether.h>
 
+#include <cstring>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+
+#include <string>
 // https://mislove.org/teaching/cs4700/spring11/handouts/project1-primer.pdf 
 // https://www.catchpoint.com/blog/how-dns-works
 

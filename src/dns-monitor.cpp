@@ -45,43 +45,13 @@ void print_udphdr(struct udphdr *udph) {
     cout << '\t' << "Checksum: " << ntohs(udph->check) << endl;
 }
 
-void display_dns_packet(dns_header *dnsh, struct udphdr *udph, struct ip *iph, struct tm ts, bool verbose) {
+void display_dns_packet(dns_header *dnsh) {
 
-    char src_ip_str[INET_ADDRSTRLEN];
-    char dst_ip_str[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &(iph->ip_src), src_ip_str, INET_ADDRSTRLEN);
-    inet_ntop(AF_INET, &(iph->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
+    // for (int i = 0; i < dnsh->qd_count; i++) {
+        // struct dns_question *dnsq = (struct dns_question *)(dnsh + )
+    // }
 
-    dnsh->flags = ntohs(dnsh->flags);
-    dnsh->qd_count = ntohs(dnsh->qd_count);
-    dnsh->an_count = ntohs(dnsh->an_count);
-    dnsh->ns_count = ntohs(dnsh->ns_count);
-    dnsh->ar_count = ntohs(dnsh->ar_count);
-
-    // Extract individual flags from the DNS flags field
-
-    if (verbose) {
-        cout << "Timestamp: " << put_time(&ts, "%Y-%m-%d %H:%M:%S") << endl;
-        cout << "SrcIP: " << src_ip_str << endl;
-        cout << "DstIP: " << dst_ip_str << endl;
-        cout << "SrcPort: UDP/" << ntohs(udph->source) << endl;
-        cout << "DstPort: UDP/" << ntohs(udph->dest) << endl;
-        // cout << "Identifier: " << hex << uppercase << "0x" << ntohs(dnsh->id) << endl;
-        cout << "Identifier: " << ntohs(dnsh->id) << endl;
-        cout << "Flags: ";
-            cout << "QR=" << MASK_FLAG(dnsh->flags, QR_MASK, QR_SHIFT) << ", ";
-            cout << "OPCODE=" << MASK_FLAG(dnsh->flags, OPCODE_MASK, OPCODE_SHIFT) << ", ";
-            cout << "AA=" << MASK_FLAG(dnsh->flags, AA_MASK, AA_SHIFT) << ", ";
-            cout << "TC=" << MASK_FLAG(dnsh->flags, TC_MASK, TC_SHIFT) << ", ";
-            cout << "RD=" << MASK_FLAG(dnsh->flags, RD_MASK, RD_SHIFT) << ", ";
-            cout << "RA=" << MASK_FLAG(dnsh->flags, RA_MASK, RA_SHIFT) << ", ";
-            cout << "AD=" << MASK_FLAG(dnsh->flags, AD_MASK, AD_SHIFT) << ", ";
-            cout << "CD=" << MASK_FLAG(dnsh->flags, CD_MASK, CD_SHIFT) << ", ";
-            cout << "RCODE=" << MASK_FLAG(dnsh->flags, RCODE_MASK, RCODE_SHIFT) << endl;
-        
-        cout << endl; 
-
-        cout << "[Question Section]" << endl;
+    cout << "[Question Section]" << endl;
         // google.com. IN A
         cout << endl; 
 
@@ -99,36 +69,53 @@ void display_dns_packet(dns_header *dnsh, struct udphdr *udph, struct ip *iph, s
         // ns2.google.com. 86400 IN A 216.239.34.10
         cout << endl; 
 
+    
+}
+
+void display_dns_header(DnsHeader dnsh, bool verbose) {
+
+    if (verbose) {
+        cout << "Timestamp: " << dnsh.timestamp << endl;
+        cout << "SrcIP: " << dnsh.src_ip << endl;
+        cout << "DstIP: " << dnsh.dst_ip << endl;
+        cout << "SrcPort: UDP/" << dnsh.src_port << endl;
+        cout << "DstPort: UDP/" << dnsh.dst_port << endl;
+        // cout << "Identifier: " << hex << uppercase << "0x" << ntohs(dnsh->id) << endl;
+        cout << "Identifier: " << dnsh.id << endl;
+        cout << "Flags: ";
+            cout << "QR=" << dnsh.get_qr() << ", ";
+            cout << "OPCODE=" << dnsh.get_opcode() << ", ";
+            cout << "AA=" << dnsh.get_aa() << ", ";
+            cout << "TC=" << dnsh.get_tc() << ", ";
+            cout << "RD=" << dnsh.get_rd() << ", ";
+            cout << "RA=" << dnsh.get_ra() << ", ";
+            cout << "AD=" << dnsh.get_ad() << ", ";
+            cout << "CD=" << dnsh.get_cd() << ", ";
+            cout << "RCODE=" << dnsh.get_rcode() << endl;
+        
+        cout << endl; 
+
+        // display_dns_packet(dnsh);
+
         // cout << '\t' << "Questions count " << dnshdr->qd_count << endl;
         // cout << '\t' << "Answers count " << dnshdr->an_count << endl;
         // cout << '\t' << "Authority count " << dnshdr->ns_count << endl;
         // cout << '\t' << "Additionals count " << dnshdr->ar_count << endl;
         cout << "====================" << endl;
     } else {
-        cout << put_time(&ts, "%Y-%m-%d %H:%M:%S") << " ";
-        cout << src_ip_str << " -> " << dst_ip_str << " ";
-        cout << "(" << ((MASK_FLAG(dnsh->flags, QR_MASK, QR_SHIFT) == 1) ? "R" : "Q") << " ";
-        cout << dnsh->qd_count << "/";
-        cout << dnsh->an_count << "/";
-        cout << dnsh->ns_count << "/";
-        cout << dnsh->ar_count << ")" << endl;
+        cout << dnsh.timestamp << " ";
+        cout << dnsh.src_ip << " -> " << dnsh.dst_ip << " ";
+        cout << "(" << ((dnsh.get_qr() == 1) ? "R" : "Q") << " ";
+        cout << dnsh.qd_count << "/";
+        cout << dnsh.an_count << "/";
+        cout << dnsh.ns_count << "/";
+        cout << dnsh.ar_count << ")" << endl;
     }
-}
-
-struct tm printable_timestamp_from_timeval(const struct timeval ts) {
-    tm timestamp;
-    localtime_r(&ts.tv_sec, &timestamp);
-
-    return timestamp;
 }
 
 void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
 
     unsigned int offset = 0;
-
-    struct tm packet_timestamp = printable_timestamp_from_timeval(header->ts); 
-
-    cout << "Caplen: " << header->caplen << " // Len: " << header->len << endl;
 
     // https://github.com/packetzero/dnssniffer/blob/master/src/main.cpp#L166C3-L166C114
     if (header->caplen < header->len) {
@@ -138,19 +125,19 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
     offset += SIZE_ETHERNET_HDR;
     struct ip *iph = (struct ip *)(packet + offset);
 
-    // + 28?
 
     offset += iph->ip_hl * 4;
-
     struct udphdr *udph = (struct udphdr *)(packet + offset);
-    // udph = (struct udphdr *)(packet + 28);
     
     offset += sizeof(udph);
-
     struct dns_header *dnshdr = (struct dns_header *)(packet + offset);
     
+
+    // build DNS header from acquired data
+    DnsHeader dnsheader = DnsHeader(dnshdr, udph, iph, header->ts);
     
-    display_dns_packet(dnshdr, udph, iph, packet_timestamp, true);
+    
+    display_dns_header(dnsheader, true);
 
     // https://github.com/jsemaljaa/ipk22-projects/blob/main/Proj2/ipk-sniffer.c#L311
 

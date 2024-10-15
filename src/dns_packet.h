@@ -1,9 +1,17 @@
 //
 // Created by Alina Vinogradova on 10/14/2024.
 //
-
 #ifndef DNS_HEADER_H
 #define DNS_HEADER_H
+
+#include <cstdint>
+#include <ctime>
+#include <arpa/inet.h>
+#include <netinet/ip.h>
+#include <netinet/udp.h>
+#include <string> 
+#include <sstream>
+#include <iomanip>
 
 /* 
     16b flags structure
@@ -55,22 +63,54 @@ struct dns_header {
     uint16_t id; // identification number
     uint16_t flags; // flags to extract with masks
 
-    // u_char rd:1; // recursion desired
-    // u_char tc:1; // truncated message
-    // u_char aa:1; // authoritative answer
-    // uint8_t opcode:4; // purpose of message
-    // u_char qr:1; // query/response flag
-
-    // uint8_t rcode:4; // response code
-    // u_char cd:1; // checking disabled
-    // u_char ad:1; // authenticated data
-    // u_char z:1; // reserved for future
-    // u_char ra:1; // recursion available
-
     uint16_t qd_count; // number of question entries
     uint16_t an_count; // number of answer entries
     uint16_t ns_count; // number of authority entries
     uint16_t ar_count; // number of additional entries
+};
+
+// This class is not conventional DNS header, but rather header that will suite needs 
+// of this project (meaning it includes data from other network layers that we want to display)
+// together with DNS header information
+
+class DnsHeader {
+    public:
+        uint16_t id;
+        uint16_t flags;
+
+        uint16_t qd_count;
+        uint16_t an_count;
+        uint16_t ns_count;
+        uint16_t ar_count;
+
+        char src_ip[INET_ADDRSTRLEN];
+        char dst_ip[INET_ADDRSTRLEN];
+
+        uint16_t src_port;
+        uint16_t dst_port;
+
+        std::string timestamp;
+
+        DnsHeader(struct dns_header *dnsh, struct udphdr *udph, struct ip *iph, const struct timeval ts);
+        uint16_t get_qr();
+		uint16_t get_opcode();
+		uint16_t get_aa();
+		uint16_t get_tc();
+		uint16_t get_rd();
+		uint16_t get_ra();
+		uint16_t get_ad();
+		uint16_t get_cd();
+		uint16_t get_rcode();
+
+    private:
+        std::string convert_timestamp(const struct timeval ts);
+};
+
+struct dns_question {
+    uint16_t name_len;
+    char name[255];
+    uint16_t type;
+    uint16_t qclass;
 };
 
 #endif //DNS_HEADER_H
