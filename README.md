@@ -28,10 +28,15 @@ This project implements a program named `dns-monitor` that monitors and analyzes
 
 ### Example Usage:
 
-1. **Monitor live traffic on eth0 interface:**
+1. **Monitor live traffic on eth0 interface:** (example interface from my Windows machine)
 
 ```bash
 ./dns-monitor -i eth0
+```
+**Monitor live traffic on enp5s0 interface:** (example interface from my Ubuntu machine)
+
+```bash
+./dns-monitor -i enp5s0
 ```
 
 2. **Process data from a PCAP file named `dns_traffic.pcap`:**
