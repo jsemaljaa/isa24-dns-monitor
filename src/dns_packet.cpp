@@ -5,7 +5,7 @@
 #include "dns_packet.h"
 
 
-DnsHeader::DnsHeader(struct dns_header *dnsh, struct udphdr *udph, struct ip *iph, const struct timeval ts) {
+DnsHeader::DnsHeader(dns_header_t *dnsh, struct udphdr *udph, struct ip *iph, const struct timeval ts) {
     id = ntohs(dnsh->id);
     flags = ntohs(dnsh->flags);
     qd_count = ntohs(dnsh->qd_count);

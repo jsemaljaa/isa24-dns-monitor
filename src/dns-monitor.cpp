@@ -8,31 +8,63 @@ using namespace std;
 
 // g++ -o dns-monitor dns-monitor.cpp -lpcap
 
+
+// https://en.wikipedia.org/wiki/List_of_DNS_record_types
+const char *parse_dns_question_type(uint16_t type) {
+    switch (type) {
+    case 1:
+        return "A";
+    case 2:
+        return "NS";
+    case 5:
+        return "CNAME";
+    case 6:
+        return "SOA";
+    case 15:
+        return "MX";
+    case 28:
+        return "AAAA";
+    case 33:
+        return "SRV";    
+    default:
+        return "UNKNWN";
+    }
+}
+
+const char *parse_dns_question_class(uint16_t qclass) {
+    switch (qclass) {
+    case 1:
+        return "IN";
+    default:
+        return "UNKNWN";
+    }
+}
+
 void print_debug(const char *message) {
     cout << message << endl;
 }
 
 parameters get_app_config(int argc, char *argv[]) {
     parameters config = parse(argc, argv);
-    if (!config.interface.empty()) {
-        cout << "Interface: " << config.interface << endl;
-    }
+    // if (!config.interface.empty()) {
+    //     cout << "Interface: " << config.interface << endl;
+    // }
 
-    if (!config.pcapfile.empty()) {
-        cout << "PCAP File: " << config.pcapfile << endl;
-    }
+    // if (!config.pcapfile.empty()) {
+    //     cout << "PCAP File: " << config.pcapfile << endl;
+    // }
 
-    if (config.verbose) {
-        cout << "Verbose Mode: ON" << endl;
-    }
+    // if (config.verbose) {
+    //     cout << "Verbose Mode: ON" << endl;
+    // }
 
-    if (!config.domainsfile.empty()) {
-        cout << "Domains File: " << config.domainsfile << endl;
-    }
+    // if (!config.domainsfile.empty()) {
+    //     cout << "Domains File: " << config.domainsfile << endl;
+    // }
 
-    if (!config.translationsfile.empty()) {
-        cout << "Translations File: " << config.translationsfile << endl;
-    }
+    // if (!config.translationsfile.empty()) {
+    //     cout << "Translations File: " << config.translationsfile << endl;
+    // }
 
     return config;
 }
@@ -51,7 +83,6 @@ void display_dns_packet(dns_header *dnsh) {
         // struct dns_question *dnsq = (struct dns_question *)(dnsh + )
     // }
 
-    cout << "[Question Section]" << endl;
         // google.com. IN A
         cout << endl; 
 
@@ -72,7 +103,7 @@ void display_dns_packet(dns_header *dnsh) {
     
 }
 
-void display_dns_header(DnsHeader dnsh, bool verbose) {
+void display_dns_packet(DnsHeader dnsh, bool verbose) {
 
     if (verbose) {
         cout << "Timestamp: " << dnsh.timestamp << endl;
@@ -95,12 +126,18 @@ void display_dns_header(DnsHeader dnsh, bool verbose) {
         
         cout << endl; 
 
+        cout << "[Question Section]" << endl;
+
+        for (; !dnsh.questions.empty(); dnsh.questions.pop()) {
+            cout << dnsh.questions.front();
+        }
+        cout << endl; 
         // display_dns_packet(dnsh);
 
-        // cout << '\t' << "Questions count " << dnshdr->qd_count << endl;
-        // cout << '\t' << "Answers count " << dnshdr->an_count << endl;
-        // cout << '\t' << "Authority count " << dnshdr->ns_count << endl;
-        // cout << '\t' << "Additionals count " << dnshdr->ar_count << endl;
+        // cout << '\t' << "Questions count " << dnsh.qd_count << endl;
+        // cout << '\t' << "Answers count " << dnsh.an_count << endl;
+        // cout << '\t' << "Authority count " << dnsh.ns_count << endl;
+        // cout << '\t' << "Additionals count " << dnsh.ar_count << endl;
         cout << "====================" << endl;
     } else {
         cout << dnsh.timestamp << " ";
@@ -113,9 +150,40 @@ void display_dns_header(DnsHeader dnsh, bool verbose) {
     }
 }
 
+std::string parse_domain_name(const u_char *packet, int offset) {
+    /*
+        A domain name represented as a sequence of labels, where each label consists of a length
+        octet followed by that number of octets
+    */
+    std::string domain;
+    while (true) {
+        uint8_t len = packet[offset++]; // first byte is a length of a current string
+        if (len == 0) {
+            // finish reading
+            break;
+        }
+
+        if (len & 0xC0) {
+            // https://mislove.org/teaching/cs4700/spring11/handouts/project1-primer.pdf
+            // chapter 5 DNS Packet Compression
+            // 0x3F = 0b00111111, extracting offset from first two bytes
+            int pointerOffset = ((len & 0x3F) << 8) | packet[offset++];
+            domain += parse_domain_name(packet, pointerOffset);
+            break;
+        } else {
+            domain += std::string((const char *)&packet[offset], len) + '.';
+            offset += len;
+        }
+    }
+
+    return domain;
+}
+
 void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
 
     unsigned int offset = 0;
+
+    cout << "Total len: " << header->len << endl;
 
     // https://github.com/packetzero/dnssniffer/blob/master/src/main.cpp#L166C3-L166C114
     if (header->caplen < header->len) {
@@ -130,30 +198,54 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
     struct udphdr *udph = (struct udphdr *)(packet + offset);
     
     offset += sizeof(udph);
-    struct dns_header *dnshdr = (struct dns_header *)(packet + offset);
-    
+    dns_header_t *dnshdr = (dns_header_t *)(packet + offset);
 
     // build DNS header from acquired data
     DnsHeader dnsheader = DnsHeader(dnshdr, udph, iph, header->ts);
     
-    
-    display_dns_header(dnsheader, true);
 
-    // https://github.com/jsemaljaa/ipk22-projects/blob/main/Proj2/ipk-sniffer.c#L311
+    // skip dns header
+    offset += sizeof(dnshdr);
+    // proceed to parse DNS questions
+
+    for (int i = 0; i < dnsheader.qd_count; i++) {
+        // avoiding using structure simmilar to dns header because domain name
+        // is a variable and we don't know the exact size of this part of dataframe
+        // without parsing domain name
+
+        // WHY DOES IT WORK PERFECTLY WHEN I MANUALLY ADD 4 TO THE OFFSET????
+        // i figured it out in wireshark, need to investigate further
+        offset += 4;
+
+        std::string domain = parse_domain_name(packet, offset);
+        offset += domain.length() + 1; // +1 for null-termination
+        
+        const char *qtype = parse_dns_question_type(ntohs(*(uint16_t*)(packet + offset)));
+        offset += 2; // always 2 bytes for both question type and class 
+        
+        const char *qclass = parse_dns_question_class(ntohs(*(uint16_t*)(packet + offset)));
+        offset += 2;
+
+        std::ostringstream oss;
+        oss << domain << " " << qclass << " " << qtype << endl;
+        std::string dns_question_record = oss.str();
+
+        dnsheader.questions.push(dns_question_record);
+    }
+
+    display_dns_packet(dnsheader, true);
 
 
     // dig -p 53 domain.com @8.8.8.8
 
-
-    // iph = (struct ip *)(packet + SIZE_ETHERNET_HDR); // Skip 14 bytes of ethernet header 
-    // udph = (struct udphdr *)(packet + SIZE_ETHERNET_HDR + iph->ip_hl * 4);
-    // 17 corresponds to UDP protocol
+    // free(question_list->questions);
+    // free(question_list);
 }
 
 
 int main(int argc, char* argv[]) {
 
-    cout << "Byte order: " << (__BYTE_ORDER == __BIG_ENDIAN ? "BIG_ENDIAN" : "LITTLE_ENDIAN") << endl;
+    // cout << "Byte order: " << (__BYTE_ORDER == __BIG_ENDIAN ? "BIG_ENDIAN" : "LITTLE_ENDIAN") << endl;
 
     parameters config = get_app_config(argc, argv);
 
@@ -190,7 +282,7 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    cout << "Applied filter: " << filter << endl;
+    // cout << "Applied filter: " << filter << endl;
 
     pcap_loop(handle, -1, packet_handler, nullptr);
 

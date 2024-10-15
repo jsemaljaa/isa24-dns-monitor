@@ -12,6 +12,7 @@
 #include <string> 
 #include <sstream>
 #include <iomanip>
+#include <queue>
 
 /* 
     16b flags structure
@@ -59,7 +60,7 @@
 #define RCODE_MASK 0x000F   // 0b0000000000001111
 #define RCODE_SHIFT 0
 
-struct dns_header {
+typedef struct dns_header {
     uint16_t id; // identification number
     uint16_t flags; // flags to extract with masks
 
@@ -67,7 +68,7 @@ struct dns_header {
     uint16_t an_count; // number of answer entries
     uint16_t ns_count; // number of authority entries
     uint16_t ar_count; // number of additional entries
-};
+} dns_header_t;
 
 // This class is not conventional DNS header, but rather header that will suite needs 
 // of this project (meaning it includes data from other network layers that we want to display)
@@ -91,7 +92,9 @@ class DnsHeader {
 
         std::string timestamp;
 
-        DnsHeader(struct dns_header *dnsh, struct udphdr *udph, struct ip *iph, const struct timeval ts);
+        std::queue<std::string> questions;
+
+        DnsHeader(dns_header_t *dnsh, struct udphdr *udph, struct ip *iph, const struct timeval ts);
         uint16_t get_qr();
 		uint16_t get_opcode();
 		uint16_t get_aa();
@@ -106,11 +109,8 @@ class DnsHeader {
         std::string convert_timestamp(const struct timeval ts);
 };
 
-struct dns_question {
-    uint16_t name_len;
-    char name[255];
-    uint16_t type;
-    uint16_t qclass;
-};
+// https://support.huawei.com/enterprise/en/doc/EDOC1100174721/f917b5d7/dns
+
+
 
 #endif //DNS_HEADER_H
