@@ -95,15 +95,17 @@ typedef struct dns_header {
     uint16_t ar_count; // number of additional entries
 } dns_header_t;
 
-// structure to parse Answer, Authority and Additional sections
-typedef struct dns_record {
-    std::string name;
+// structure to parse Answer
+typedef struct dns_answer {
     uint16_t type;
     uint16_t class_;
     uint32_t ttl;
     uint16_t rdlength;
-    unsigned char* rdata; // Pointer to the variable-length RDATA
-} dns_record_t;
+    uint16_t rdata;
+    // unsigned char* rdata; // Pointer to the variable-length RDATA
+} dns_answer_t;
+
+// , Authority and Additional sections
 
 /*
     This class is not conventional DNS header, but rather header that will suite needs 
@@ -128,6 +130,8 @@ class DnsHeader {
 
         std::string timestamp;
 
+        const u_char *DNSstream;
+        
         DnsHeader(dns_header_t *dnsh, struct udphdr *udph, struct ip *iph, const struct timeval ts);
         uint16_t get_qr();
 		uint16_t get_opcode();
