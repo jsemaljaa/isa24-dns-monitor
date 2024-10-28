@@ -72,49 +72,58 @@ parameters get_app_config(int argc, char *argv[]) {
 
 string parse_domain_name(const u_char *stream, int *offset, const u_char *DNSstream) {
     /*
-        A domain name represented as a sequence of labels, where each label consists of a length
-        octet followed by that number of octets
+        Parses a domain name from a DNS packet stream.
+
+        Domain names are represented as a sequence of labels, where each label consists of:
+            - A length octet specifying the number of characters in the label.
+            - The characters of the label.
+
+        This function handles both standard labels and compressed labels (using pointers).
+
+        Sources:
+            - https://mislove.org/teaching/cs4700/spring11/handouts/project1-primer.pdf
+              chapter 5 DNS Packet Compression 
+            - https://spathis.medium.com/how-dns-got-its-messages-on-diet-c49568b234a2
+
     */
 
     string domain;
 
     while (true) {
-        uint8_t len = stream[*offset]; // first byte is a length of a current string
-
-        // cout << "Got byte: " << hex << setfill('0') << setw(2) << static_cast<int>(len) << dec << endl;
-
+        uint8_t len = stream[*offset]; // Get first byte: could be the length of the current label or compression pointer
         (*offset)++;
 
         // uint8_t firstByte = (len >> 8) & 0xFF;
         // uint8_t secondByte = len & 0xFF;
 
         if (len == 0) {
-            // finish reading
+            // End of the domain name
             break;
         } else if (len >= 0xC0) {
-            // https://mislove.org/teaching/cs4700/spring11/handouts/project1-primer.pdf
-            // chapter 5 DNS Packet Compression
-
-            // first two bits indicates that this is a compression pointer
-            // the rest 14 bits are an actual pointer 
-            // int pointerOffset = ((len & 0x3F) << 8) | packet[*offset];
+            // Compression pointer encountered
+            //  - The first two bits (0b1100000000000000) indicate a pointer.
+            //  - The remaining 14 (0b00XXXXXXXXXXXXXX) bits form an offset within the DNS packet.
             
-            // read next byte 
+            // Get next byte 
             uint8_t nextByte = stream[*offset];
             (*offset)++;
 
+            // Combine the two bytes to get the full 14-bit offset
             uint16_t bytePair = (len << 8) | nextByte;
 
-            int pointerOffset = bytePair & 0x3FFF;
+            // Mask out the pointer bits (0b00XXXXXXXXXXXXXX)
+            int pointerOffset = bytePair & 0x3FFF; 
 
             // if we got a compression pointer and extracted the place where it points to
             // then we're starting to parse domain name from the beginning of DNS packet stream with given pointer offset
 
+            // Come back and recursively parse domain name starting at the pointer offset
             domain += parse_domain_name(DNSstream, &pointerOffset, DNSstream);
             
-            break;
-        } else {
-            domain += string((const char *)&stream[*offset], len) + '.';
+            break; // Pointer is always the last label
+        } else { 
+            // Standard label
+            domain += string((const char *)&stream[*offset], len) + '.'; 
             *offset += len;
         }
     }
@@ -270,16 +279,16 @@ void answers_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
                 free(soa);
                 break;
             } case DNS_MX: { // Mail exchange
-                int localOffset = 0;
+
                 uint16_t preference;
-                memcpy(&preference, &answer->rdata + localOffset, 2);
-                localOffset += 2;
+                memcpy(&preference, &packet[*offset], 2);
+
+                *offset += 2;
                 preference = ntohs(preference);
 
-                const u_char *mxStream = (const u_char *)answer->rdata + localOffset;
-
-                string mail = parse_domain_name(mxStream, &localOffset, dnspacket->header->DNSstream);
+                string mail = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
                 data = to_string(preference) + " " + mail;
+
                 break;
             } case DNS_AAAA: { // IPv6 address
                 if (answer->rdlength != 16) {
@@ -290,6 +299,30 @@ void answers_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
                     data = ip6str;
                 }
                 *offset += answer->rdlength;
+                break;
+            } case DNS_SRV: {
+                dns_srv_record_t *srv = (dns_srv_record_t *)malloc(sizeof(dns_srv_record_t));
+                if (srv == NULL) {
+                    std::cerr << "Malloc failed: answers_handler srv" << std::endl;
+                    free(answer);
+                    return; // Handle allocation failure
+                }
+
+                memcpy(&srv->priority, &packet[*offset], 2); *offset += 2;
+                srv->priority = ntohs(srv->priority);
+
+                memcpy(&srv->weight, &packet[*offset], 2); *offset += 2;
+                srv->weight = ntohs(srv->weight);
+
+                memcpy(&srv->port, &packet[*offset], 2); *offset += 2;
+                srv->port = ntohs(srv->port);
+
+                string target = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
+
+                data = to_string(srv->priority) + " " + to_string(srv->weight) + " " + 
+                       to_string(srv->port) + " " + target;
+
+                free(srv);
                 break;
             } default: {
                 // Unsupported answer type, skip it
@@ -358,7 +391,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
     offset += sizeof(udph);
     dns_header_t *dnshdr = (dns_header_t *)(packet + offset);
 
-    // build DNS header from acquired data
+    // Build DNS header from acquired data
     DnsHeader dnsheader = DnsHeader(dnshdr, udph, iph, header->ts);
     dnsheader.DNSstream = &packet[offset];
 
@@ -367,12 +400,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
 
     offset += sizeof(dnshdr);
 
-    // proceed to parse DNS records (questions, answer, etc.)
-
-    // when we are passing a packet
-    // we want to restrict it to the beginning of dns message
-    // (after dns header)
-    // int messageOffset = 0;
+    // Proceed to parse DNS records (questions, answer, etc.)
 
     questions_handler(dnspacket, packet, &offset);
     answers_handler(dnspacket, packet, &offset);
@@ -420,8 +448,6 @@ int main(int argc, char* argv[]) {
 	    fprintf(stderr, "Error setting filter: %s\n", pcap_geterr(handle));
         exit(EXIT_FAILURE);
     }
-
-    // cout << "Applied filter: " << filter << endl;
 
     pcap_loop(handle, -1, packet_handler, nullptr);
 

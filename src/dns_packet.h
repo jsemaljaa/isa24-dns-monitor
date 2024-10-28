@@ -53,7 +53,7 @@ enum dns_record_types {
     DNS_SRV = 33, // [RFC2782] Generalized service location record
 };
 
-// shift needed to extract exact bits from a masked part of flag
+// Shift needed to extract exact bits from a masked part of flag
 #define MASK_FLAG(flag, mask, shift) ((flag & mask) >> shift)
 
 
@@ -82,12 +82,10 @@ enum dns_record_types {
 #define RCODE_MASK 0x000F   // 0b0000000000001111
 #define RCODE_SHIFT 0
 
-// https://support.huawei.com/enterprise/en/doc/EDOC1100174721/f917b5d7/dns
-
 
 typedef struct dns_header {
-    uint16_t id; // identification number
-    uint16_t flags; // flags to extract with masks
+    uint16_t id;       // identification number
+    uint16_t flags;    // flags to extract with masks
 
     uint16_t qd_count; // number of question entries
     uint16_t an_count; // number of answer entries
@@ -112,6 +110,13 @@ typedef struct dns_soa_record {
     uint32_t expire;
     uint32_t minimum;
 } dns_soa_record_t;
+
+typedef struct dns_srv_record {
+    uint16_t priority;
+    uint16_t weight;
+    uint16_t port;
+} dns_srv_record_t;
+
 // , Authority and Additional sections
 
 /*

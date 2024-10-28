@@ -2,7 +2,7 @@ DNS SRV:
     dig _xmpp-client._tcp.jabber.org. SRV
 
 DNS NS: + 
-    dig example.com NS
+    dig example.com NS @8.8.8.8
 
 DNS A: +
     dig -p 53 domain.com @8.8.8.8
@@ -14,4 +14,8 @@ DNS SOA: +
     dig SOA +multiline yahoo.com @8.8.8.8
 
 DNS AAAA:
-    dig mobile.events.data.microsoft.com. AAAA @8.8.8.8 
+    <!-- dig mobile.events.data.microsoft.com. AAAA @8.8.8.8  -->
+    dig google.com AAAA @8.8.8.8
+
+DNS MX: 
+    dig gmail.com MX @1.1.1.1
