@@ -105,6 +105,13 @@ typedef struct dns_answer {
     // unsigned char* rdata; // Pointer to the variable-length RDATA
 } dns_answer_t;
 
+typedef struct dns_soa_record {
+    uint32_t serial;
+    uint32_t refresh;
+    uint32_t retry;
+    uint32_t expire;
+    uint32_t minimum;
+} dns_soa_record_t;
 // , Authority and Additional sections
 
 /*

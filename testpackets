@@ -1,2 +1,17 @@
 DNS SRV: 
     dig _xmpp-client._tcp.jabber.org. SRV
+
+DNS NS: + 
+    dig example.com NS
+
+DNS A: +
+    dig -p 53 domain.com @8.8.8.8
+
+DNS CNAME: + 
+    dig -t cname www.bbc.co.uk @8.8.8.8
+
+DNS SOA: +
+    dig SOA +multiline yahoo.com @8.8.8.8
+
+DNS AAAA:
+    dig mobile.events.data.microsoft.com. AAAA @8.8.8.8 

@@ -1,7 +1,7 @@
 # Makefile for dns-monitor
 
 CC = g++
-CFLAGS = -Wall -Wextra -pedantic
+CFLAGS = -Wall -Wextra -pedantic -g
 TARGET = dns-monitor
 
 # files
