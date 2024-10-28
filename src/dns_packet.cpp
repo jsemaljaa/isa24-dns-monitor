@@ -31,17 +31,6 @@ std::string DnsHeader::convert_timestamp(const struct timeval ts) {
     return oss.str();
 }
 
-
-// const char* DnsHeader::get_readable_ip(struct in_addr ip) {
-    // char src_ip_str[INET_ADDRSTRLEN];
-    // char dst_ip_str[INET_ADDRSTRLEN];
-    // inet_ntop(AF_INET, &(iph->ip_src), src_ip_str, INET_ADDRSTRLEN);
-    // inet_ntop(AF_INET, &(iph->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
-    // char ipstr[INET_ADDRSTRLEN];
-    // inet_ntop(AF_INET, ip, ipstr, INET_ADDRSTRLEN);
-    // return ipstr;
-// }
-
 uint16_t DnsHeader::get_qr() {
     return MASK_FLAG(flags, QR_MASK, QR_SHIFT);
 }
@@ -76,4 +65,8 @@ uint16_t DnsHeader::get_cd() {
 
 uint16_t DnsHeader::get_rcode() {
     return MASK_FLAG(flags, RCODE_MASK, RCODE_SHIFT);
+}
+
+DnsPacket::DnsPacket() {
+
 }

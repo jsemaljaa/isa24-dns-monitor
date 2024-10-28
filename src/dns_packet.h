@@ -30,6 +30,28 @@
 
 */
 
+// Supported DNS record types
+// #define DNS_A 1
+// #define DNS_NS 2
+// #define DNS_CNAME 5
+// #define DNS_SOA 6
+// #define DNS_MX 15
+// #define DNS_AAAA 28
+// #define DNS_SRV 33
+
+/*
+ * Supported DNS record types
+ * according to: https://datatracker.ietf.org/doc/html/rfc1035#page-12
+ */
+enum dns_record_types {
+    DNS_A = 1, // A host address
+    DNS_NS = 2, // An authoritative name server
+    DNS_CNAME = 5, // The canonical name for an alias
+    DNS_SOA = 6, // Marks the start of a zone of authority
+    DNS_MX = 15, // Mail exchange
+    DNS_AAAA = 28, // [RFC3596] A 128-bit IPv6 address
+    DNS_SRV = 33, // [RFC2782] Generalized service location record
+};
 
 // shift needed to extract exact bits from a masked part of flag
 #define MASK_FLAG(flag, mask, shift) ((flag & mask) >> shift)
@@ -60,6 +82,9 @@
 #define RCODE_MASK 0x000F   // 0b0000000000001111
 #define RCODE_SHIFT 0
 
+// https://support.huawei.com/enterprise/en/doc/EDOC1100174721/f917b5d7/dns
+
+
 typedef struct dns_header {
     uint16_t id; // identification number
     uint16_t flags; // flags to extract with masks
@@ -70,10 +95,21 @@ typedef struct dns_header {
     uint16_t ar_count; // number of additional entries
 } dns_header_t;
 
-// This class is not conventional DNS header, but rather header that will suite needs 
-// of this project (meaning it includes data from other network layers that we want to display)
-// together with DNS header information
+// structure to parse Answer, Authority and Additional sections
+typedef struct dns_record {
+    std::string name;
+    uint16_t type;
+    uint16_t class_;
+    uint32_t ttl;
+    uint16_t rdlength;
+    unsigned char* rdata; // Pointer to the variable-length RDATA
+} dns_record_t;
 
+/*
+    This class is not conventional DNS header, but rather header that will suite needs 
+    of this project (meaning it includes data from other network layers that we want to display
+    together with DNS header information)
+*/
 class DnsHeader {
     public:
         uint16_t id;
@@ -92,8 +128,6 @@ class DnsHeader {
 
         std::string timestamp;
 
-        std::queue<std::string> questions;
-
         DnsHeader(dns_header_t *dnsh, struct udphdr *udph, struct ip *iph, const struct timeval ts);
         uint16_t get_qr();
 		uint16_t get_opcode();
@@ -109,8 +143,15 @@ class DnsHeader {
         std::string convert_timestamp(const struct timeval ts);
 };
 
-// https://support.huawei.com/enterprise/en/doc/EDOC1100174721/f917b5d7/dns
 
+class DnsPacket {
+    public:
+        DnsHeader *header;
 
+        std::vector<std::string> questions;
+        std::vector<std::string> answers;
+
+        DnsPacket();
+};
 
 #endif //DNS_HEADER_H

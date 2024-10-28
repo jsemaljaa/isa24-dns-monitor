@@ -7,31 +7,36 @@
 using namespace std;
 
 // g++ -o dns-monitor dns-monitor.cpp -lpcap
+// dig -p 53 domain.com @8.8.8.8
 
+
+void debug_display_offset(int *offset) {
+    cout << "[DEBUG] Current offset: " << *offset << endl;
+}
 
 // https://en.wikipedia.org/wiki/List_of_DNS_record_types
-const char *parse_dns_question_type(uint16_t type) {
+const char *parse_dns_type(uint16_t type) {
     switch (type) {
-    case 1:
+    case DNS_A:
         return "A";
-    case 2:
+    case DNS_NS:
         return "NS";
-    case 5:
+    case DNS_CNAME:
         return "CNAME";
-    case 6:
+    case DNS_SOA:
         return "SOA";
-    case 15:
+    case DNS_MX:
         return "MX";
-    case 28:
+    case DNS_AAAA:
         return "AAAA";
-    case 33:
-        return "SRV";    
+    case DNS_SRV:
+        return "SRV";
     default:
         return "UNKNWN";
     }
 }
 
-const char *parse_dns_question_class(uint16_t qclass) {
+const char *parse_dns_class(uint16_t qclass) {
     switch (qclass) {
     case 1:
         return "IN";
@@ -69,14 +74,6 @@ parameters get_app_config(int argc, char *argv[]) {
     return config;
 }
 
-void print_udphdr(struct udphdr *udph) {
-    cout << "UDP Header:" << endl;
-    cout << '\t' << "Source port: " << ntohs(udph->source) << endl;
-    cout << '\t' << "Destination port: " << ntohs(udph->dest) << endl;
-    cout << '\t' << "Length: " << ntohs(udph->len) << endl;
-    cout << '\t' << "Checksum: " << ntohs(udph->check) << endl;
-}
-
 void display_dns_packet(dns_header *dnsh) {
 
     // for (int i = 0; i < dnsh->qd_count; i++) {
@@ -84,10 +81,6 @@ void display_dns_packet(dns_header *dnsh) {
     // }
 
         // google.com. IN A
-        cout << endl; 
-
-        cout << "[Answer Section]" << endl;
-        // google.com. 300 IN A 142.250.183.142
         cout << endl; 
 
         cout << "[Authority Section]" << endl;
@@ -99,91 +92,254 @@ void display_dns_packet(dns_header *dnsh) {
         // ns1.google.com. 86400 IN A 216.239.32.10
         // ns2.google.com. 86400 IN A 216.239.34.10
         cout << endl; 
-
-    
 }
 
-void display_dns_packet(DnsHeader dnsh, bool verbose) {
-
-    if (verbose) {
-        cout << "Timestamp: " << dnsh.timestamp << endl;
-        cout << "SrcIP: " << dnsh.src_ip << endl;
-        cout << "DstIP: " << dnsh.dst_ip << endl;
-        cout << "SrcPort: UDP/" << dnsh.src_port << endl;
-        cout << "DstPort: UDP/" << dnsh.dst_port << endl;
-        // cout << "Identifier: " << hex << uppercase << "0x" << ntohs(dnsh->id) << endl;
-        cout << "Identifier: " << dnsh.id << endl;
-        cout << "Flags: ";
-            cout << "QR=" << dnsh.get_qr() << ", ";
-            cout << "OPCODE=" << dnsh.get_opcode() << ", ";
-            cout << "AA=" << dnsh.get_aa() << ", ";
-            cout << "TC=" << dnsh.get_tc() << ", ";
-            cout << "RD=" << dnsh.get_rd() << ", ";
-            cout << "RA=" << dnsh.get_ra() << ", ";
-            cout << "AD=" << dnsh.get_ad() << ", ";
-            cout << "CD=" << dnsh.get_cd() << ", ";
-            cout << "RCODE=" << dnsh.get_rcode() << endl;
-        
-        cout << endl; 
-
-        cout << "[Question Section]" << endl;
-
-        for (; !dnsh.questions.empty(); dnsh.questions.pop()) {
-            cout << dnsh.questions.front();
-        }
-        cout << endl; 
-        // display_dns_packet(dnsh);
-
-        // cout << '\t' << "Questions count " << dnsh.qd_count << endl;
-        // cout << '\t' << "Answers count " << dnsh.an_count << endl;
-        // cout << '\t' << "Authority count " << dnsh.ns_count << endl;
-        // cout << '\t' << "Additionals count " << dnsh.ar_count << endl;
-        cout << "====================" << endl;
-    } else {
-        cout << dnsh.timestamp << " ";
-        cout << dnsh.src_ip << " -> " << dnsh.dst_ip << " ";
-        cout << "(" << ((dnsh.get_qr() == 1) ? "R" : "Q") << " ";
-        cout << dnsh.qd_count << "/";
-        cout << dnsh.an_count << "/";
-        cout << dnsh.ns_count << "/";
-        cout << dnsh.ar_count << ")" << endl;
-    }
-}
-
-std::string parse_domain_name(const u_char *packet, int offset) {
+string parse_domain_name(const u_char *packet, int *offset) {
     /*
         A domain name represented as a sequence of labels, where each label consists of a length
         octet followed by that number of octets
     */
-    std::string domain;
+    
+    string domain;
+
     while (true) {
-        uint8_t len = packet[offset++]; // first byte is a length of a current string
+        uint8_t len = packet[*offset]; // first byte is a length of a current string
+        cout << "Got byte: " << hex << setfill('0') << setw(2) << static_cast<int>(len) << dec << endl;
+        // cout << "Got byte: " << static_cast<int>(len) << endl;
+        (*offset)++;
+
         if (len == 0) {
             // finish reading
             break;
-        }
-
-        if (len & 0xC0) {
+        } else if (len & 0xC0) {
             // https://mislove.org/teaching/cs4700/spring11/handouts/project1-primer.pdf
             // chapter 5 DNS Packet Compression
             // 0x3F = 0b00111111, extracting offset from first two bytes
-            int pointerOffset = ((len & 0x3F) << 8) | packet[offset++];
-            domain += parse_domain_name(packet, pointerOffset);
+            
+            int pointerOffset = ((len & 0x3F) << 8) | packet[*offset];
+            (*offset)++;
+
+            pointerOffset = ntohs(pointerOffset);
+
+            domain += parse_domain_name(packet, &pointerOffset);
+
             break;
         } else {
-            domain += std::string((const char *)&packet[offset], len) + '.';
-            offset += len;
+            domain += string((const char *)&packet[*offset], len) + '.';
+            *offset += len;
         }
     }
 
     return domain;
 }
 
+string serve_dns_answer(dns_record_t record) {
+    // constructing a string to display
+    // google.com. 300 IN A 142.250.183.142
+    // [name] [TTL] [class] [type] [data]
+
+    ostringstream oss;
+    // oss << domain << " " << qclass << " " << qtype << endl;
+    // string dns_question_record = oss.str();
+
+    string data;
+
+    cout << "[serve dns answer] record type: " << record.type << endl;
+
+    if (record.type == DNS_A) {
+        // extracting IPv4 address
+        char ipstr[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, record.rdata, ipstr, INET_ADDRSTRLEN);
+        data.resize(INET_ADDRSTRLEN);
+        cout << "DNS ANSWER TYPE A IP: " << ipstr << endl;
+        copy(ipstr, ipstr + INET_ADDRSTRLEN, data.begin());
+    } else if (record.type == DNS_NS || record.type == DNS_CNAME) {
+        data = parse_domain_name(record.rdata, 0);
+    } else if (record.type == DNS_SOA) {
+
+    } else if (record.type == DNS_MX) {
+        int offset = 0;
+        uint16_t p = ntohs(*(uint16_t*)(record.rdata + offset)); offset += 2;
+        data = parse_domain_name(record.rdata, &offset);
+    } else if (record.type == DNS_AAAA) {
+        char ip6str[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, record.rdata, ip6str, INET6_ADDRSTRLEN);
+        data.resize(INET6_ADDRSTRLEN);
+        copy(ip6str, ip6str + INET6_ADDRSTRLEN, data.begin());
+    } else {
+        // return "";
+    }
+
+    oss << record.name << " " << record.ttl << " " << record.class_ << " " << record.type << " " << data << endl;
+    cout << "[DEBUG] Returning: " << oss.str();
+    return oss.str();
+}
+
+void display_dns_packet(DnsPacket dnspacket, bool verbose) {
+
+    if (verbose) {
+        cout << "Timestamp: " << dnspacket.header->timestamp << endl;
+        cout << "SrcIP: " << dnspacket.header->src_ip << endl;
+        cout << "DstIP: " << dnspacket.header->dst_ip << endl;
+        cout << "SrcPort: UDP/" << dnspacket.header->src_port << endl;
+        cout << "DstPort: UDP/" << dnspacket.header->dst_port << endl;
+        // cout << "Identifier: " << hex << uppercase << "0x" << ntohs(dnsh->id) << endl;
+        cout << "Identifier: " << dnspacket.header->id << endl;
+        cout << "Flags: ";
+            cout << "QR=" << dnspacket.header->get_qr() << ", ";
+            cout << "OPCODE=" << dnspacket.header->get_opcode() << ", ";
+            cout << "AA=" << dnspacket.header->get_aa() << ", ";
+            cout << "TC=" << dnspacket.header->get_tc() << ", ";
+            cout << "RD=" << dnspacket.header->get_rd() << ", ";
+            cout << "RA=" << dnspacket.header->get_ra() << ", ";
+            cout << "AD=" << dnspacket.header->get_ad() << ", ";
+            cout << "CD=" << dnspacket.header->get_cd() << ", ";
+            cout << "RCODE=" << dnspacket.header->get_rcode() << endl;
+        
+        cout << endl; 
+
+        if (!dnspacket.questions.empty()) {
+            cout << "[Question Section]" << endl;
+            
+            for (const std::string& q : dnspacket.questions) {
+                if (!q.empty()) cout << q;
+            }
+            
+            cout << endl;
+        }
+
+        if (!dnspacket.answers.empty()) {
+            cout << "[Answer Section]" << endl;
+            // google.com. 300 IN A 142.250.183.142
+            // [name] [TTL] [class] [type] [data]
+
+            for (const string &a : dnspacket.answers) {
+                if (!a.empty()) cout << a;
+            }
+            
+            cout << endl;
+        }
+        
+        cout << "====================" << endl;
+    } else {
+        cout << dnspacket.header->timestamp << " ";
+        cout << dnspacket.header->src_ip << " -> " << dnspacket.header->dst_ip << " ";
+        cout << "(" << ((dnspacket.header->get_qr() == 1) ? "R" : "Q") << " ";
+        cout << dnspacket.header->qd_count << "/";
+        cout << dnspacket.header->an_count << "/";
+        cout << dnspacket.header->ns_count << "/";
+        cout << dnspacket.header->ar_count << ")" << endl;
+    }
+}
+
+void answers_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
+    for (int i = 0; i < dnspacket->header->an_count; i++) {
+
+        dns_record_t answer;
+        answer.name = parse_domain_name(packet, offset);
+        cout << "[After answer.name] "; debug_display_offset(offset);
+        cout << "Domain name " << answer.name << endl;
+
+        // answer.type = (uint16_t)(packet + offset);
+        answer.type = ntohs(*(uint16_t *)packet + *offset); 
+        *offset += 2;
+        cout << "[After answer.type] "; debug_display_offset(offset);
+        cout << "Answer type " << answer.type << endl;
+
+        // answer.class_ = (uint16_t)(packet + offset);
+        answer.class_ = ntohs(*(uint16_t *)packet + *offset); 
+        *offset += 2;
+        cout << "[After answer.class] "; debug_display_offset(offset);
+        cout << "Answer class " << answer.class_ << endl;
+
+        // answer.ttl = (uint32_t)(packet + offset);
+        answer.ttl = ntohl(*(uint16_t *)packet + *offset); 
+        *offset += 4;
+        cout << "[After answer.ttl] "; debug_display_offset(offset);
+        cout << "Answer ttl " << answer.ttl << endl;
+
+        // answer.rdlength = (uint16_t)(packet + offset);
+        answer.rdlength = ntohs(*(uint16_t *)packet + *offset); 
+        *offset += 2;
+        cout << "[After answer.rdlength] "; debug_display_offset(offset);
+        cout << "Answer rdl " << answer.rdlength << endl;
+
+        answer.rdata = (unsigned char *)(packet + *offset); 
+        cout << "[After answer.rdata] "; debug_display_offset(offset);
+        cout << "Answer rdata " << answer.rdata << endl;
+
+        cout << answer.name << " " << answer.type << " " << answer.class_ << " " << answer.ttl << " " << answer.rdlength << " " << answer.rdata << endl << endl;
+
+        // length of data + 10 fixed bytes
+        // *offset += answer.rdlength + 10;
+        
+        debug_display_offset(offset);
+
+        ostringstream ans;
+        string data;
+
+        if (answer.type == DNS_A) {
+            // extracting IPv4 address
+            char ipstr[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, answer.rdata, ipstr, INET_ADDRSTRLEN);
+            data.resize(INET_ADDRSTRLEN);
+            cout << "DNS ANSWER TYPE A IP: " << ipstr << endl;
+            copy(ipstr, ipstr + INET_ADDRSTRLEN, data.begin());
+        } else if (answer.type == DNS_NS || answer.type == DNS_CNAME) {
+            data = parse_domain_name(answer.rdata, 0);
+        } else if (answer.type == DNS_SOA) {
+
+        } else if (answer.type == DNS_MX) {
+            int offset = 0;
+            uint16_t p = ntohs(*(uint16_t*)(answer.rdata + offset)); offset += 2;
+            data = parse_domain_name(answer.rdata, &offset);
+        } else if (answer.type == DNS_AAAA) {
+            char ip6str[INET6_ADDRSTRLEN];
+            inet_ntop(AF_INET6, answer.rdata, ip6str, INET6_ADDRSTRLEN);
+            data.resize(INET6_ADDRSTRLEN);
+            copy(ip6str, ip6str + INET6_ADDRSTRLEN, data.begin());
+        } else {
+            // continue;
+        }
+
+        ans << answer.name << " " << answer.ttl << " " << answer.class_ << " " << answer.type << " " << data << endl;
+
+        // dnspacket->answers.push_back(serve_dns_answer(answer));
+        dnspacket->answers.push_back(ans.str());
+    }
+}
+
+void questions_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
+    for (int i = 0; i < dnspacket->header->qd_count; i++) {
+        // avoiding using structure simmilar to dns header because domain name
+        // has variable size and we don't know the exact size of this part of dataframe
+        // without parsing domain name
+
+        // WHY DOES IT WORK PERFECTLY WHEN I MANUALLY ADD 4 TO THE OFFSET????
+        // i figured it out in wireshark, need to investigate further
+        *offset += 4;
+
+        string domain = parse_domain_name(packet, offset);
+        
+        const char *qtype = parse_dns_type(ntohs(*(uint16_t*)(packet + *offset)));
+        *offset += 2; // always 2 bytes for both question type and class 
+        
+        const char *qclass = parse_dns_class(ntohs(*(uint16_t*)(packet + *offset)));
+        *offset += 2;
+
+        ostringstream oss;
+        oss << domain << " " << qclass << " " << qtype << endl;
+        string dnsquestion = oss.str();
+
+        dnspacket->questions.push_back(dnsquestion);
+    }
+}
+
 void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
 
-    unsigned int offset = 0;
+    int offset = 0;
 
-    cout << "Total len: " << header->len << endl;
+    // cout << "Total len: " << header->len << endl;
 
     // https://github.com/packetzero/dnssniffer/blob/master/src/main.cpp#L166C3-L166C114
     if (header->caplen < header->len) {
@@ -203,45 +359,21 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
     // build DNS header from acquired data
     DnsHeader dnsheader = DnsHeader(dnshdr, udph, iph, header->ts);
     
+    DnsPacket *dnspacket = new DnsPacket();
+    dnspacket->header = &dnsheader;
 
-    // skip dns header
     offset += sizeof(dnshdr);
-    // proceed to parse DNS questions
 
-    for (int i = 0; i < dnsheader.qd_count; i++) {
-        // avoiding using structure simmilar to dns header because domain name
-        // is a variable and we don't know the exact size of this part of dataframe
-        // without parsing domain name
+    // proceed to parse DNS records (questions, answer, etc.)
 
-        // WHY DOES IT WORK PERFECTLY WHEN I MANUALLY ADD 4 TO THE OFFSET????
-        // i figured it out in wireshark, need to investigate further
-        offset += 4;
+    questions_handler(dnspacket, packet, &offset);
+    debug_display_offset(&offset);
+    answers_handler(dnspacket, packet, &offset);
 
-        std::string domain = parse_domain_name(packet, offset);
-        offset += domain.length() + 1; // +1 for null-termination
-        
-        const char *qtype = parse_dns_question_type(ntohs(*(uint16_t*)(packet + offset)));
-        offset += 2; // always 2 bytes for both question type and class 
-        
-        const char *qclass = parse_dns_question_class(ntohs(*(uint16_t*)(packet + offset)));
-        offset += 2;
+    display_dns_packet(*dnspacket, true);
 
-        std::ostringstream oss;
-        oss << domain << " " << qclass << " " << qtype << endl;
-        std::string dns_question_record = oss.str();
-
-        dnsheader.questions.push(dns_question_record);
-    }
-
-    display_dns_packet(dnsheader, true);
-
-
-    // dig -p 53 domain.com @8.8.8.8
-
-    // free(question_list->questions);
-    // free(question_list);
+    delete dnspacket;
 }
-
 
 int main(int argc, char* argv[]) {
 

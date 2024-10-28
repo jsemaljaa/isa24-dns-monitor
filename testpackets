@@ -1,0 +1,2 @@
+DNS SRV: 
+    dig _xmpp-client._tcp.jabber.org. SRV
