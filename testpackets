@@ -19,3 +19,6 @@ DNS AAAA:
 
 DNS MX: 
     dig gmail.com MX @1.1.1.1
+
+AUTHORITY SECTION:
+    dig google.com NS @8.8.8.8

@@ -6,11 +6,6 @@
 
 using namespace std;
 
-
-void debug_display_offset(int *offset) {
-    cout << "[DEBUG] Current offset: " << *offset << endl;
-}
-
 // https://en.wikipedia.org/wiki/List_of_DNS_record_types
 const char *parse_dns_type(uint16_t type) {
     switch (type) {
@@ -44,30 +39,10 @@ const char *parse_dns_class(uint16_t qclass) {
 
 parameters get_app_config(int argc, char *argv[]) {
     parameters config = parse(argc, argv);
-    // if (!config.interface.empty()) {
-    //     cout << "Interface: " << config.interface << endl;
-    // }
-
-    // if (!config.pcapfile.empty()) {
-    //     cout << "PCAP File: " << config.pcapfile << endl;
-    // }
-
-    // if (config.verbose) {
-    //     cout << "Verbose Mode: ON" << endl;
-    // }
-
-    // if (!config.domainsfile.empty()) {
-    //     cout << "Domains File: " << config.domainsfile << endl;
-    // }
-
-    // if (!config.translationsfile.empty()) {
-    //     cout << "Translations File: " << config.translationsfile << endl;
-    // }
-
     return config;
 }
 
-string parse_domain_name(const u_char *stream, int *offset, const u_char *DNSstream) {
+string parse_dns_string(const u_char *stream, int *offset, const u_char *DNSstream) {
     /*
         Parses a domain name from a DNS packet stream.
 
@@ -115,7 +90,7 @@ string parse_domain_name(const u_char *stream, int *offset, const u_char *DNSstr
             // then we're starting to parse domain name from the beginning of DNS packet stream with given pointer offset
 
             // Come back and recursively parse domain name starting at the pointer offset
-            domain += parse_domain_name(DNSstream, &pointerOffset, DNSstream);
+            domain += parse_dns_string(DNSstream, &pointerOffset, DNSstream);
             
             break; // Pointer is always the last label
         } else { 
@@ -126,6 +101,114 @@ string parse_domain_name(const u_char *stream, int *offset, const u_char *DNSstr
     }
 
     return domain;
+}
+
+string process_dns_record(DnsPacket *dnspacket, dns_resource_record_t *record, const u_char *packet, int *offset) {
+    string data;
+    switch (record->type) {
+        case DNS_A: { // IPv4 address
+            if (record->rdlength != 4) {
+                std::cerr << "Invalid A record length" << std::endl;
+                return "ERROROCCURED";
+            } else {
+                char ipstr[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, &record->rdata, ipstr, INET_ADDRSTRLEN);
+                data = ipstr;
+            }
+            *offset += record->rdlength;
+            break;
+        } case DNS_NS: { // Name server
+            data = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
+            break;
+        } case DNS_CNAME: { // Canonical name
+            data = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
+            break;
+        } case DNS_SOA: { // Start of authority
+            string mname = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
+            string rname = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
+
+            dns_soa_record_t *soa = (dns_soa_record_t *)malloc(sizeof(dns_soa_record_t));
+            if (soa == NULL) {
+                std::cerr << "Malloc failed: answers_handler soa" << std::endl;
+                if (record != NULL) free(record);
+                return "ERROROCCURED"; // Handle allocation failure
+            }
+
+            memcpy(&soa->serial, &packet[*offset], 4); *offset += 4; 
+            soa->serial = ntohl(soa->serial);
+        
+            memcpy(&soa->refresh, &packet[*offset], 4); *offset += 4;
+            soa->refresh = ntohl(soa->refresh);
+
+            memcpy(&soa->retry, &packet[*offset], 4); *offset += 4;
+            soa->retry = ntohl(soa->retry);
+
+            memcpy(&soa->expire, &packet[*offset], 4); *offset += 4;
+            soa->expire = ntohl(soa->expire);
+
+            memcpy(&soa->minimum, &packet[*offset], 4); *offset += 4;
+            soa->minimum = ntohl(soa->minimum);
+
+            data = mname + " " + rname + " " + 
+                       to_string(soa->serial) + " " + to_string(soa->refresh) + " " + 
+                       to_string(soa->retry) + " " + to_string(soa->expire) + " " + to_string(soa->minimum);
+        
+            if (soa != NULL) free(soa);
+            break;
+        } case DNS_MX: { // Mail exchange
+            uint16_t preference;
+            memcpy(&preference, &packet[*offset], 2);
+
+            *offset += 2;
+            preference = ntohs(preference);
+
+            string mail = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
+            data = to_string(preference) + " " + mail;
+                
+            break;
+        } case DNS_AAAA: { // IPv6 address
+            if (record->rdlength != 16) {
+                std::cerr << "Invalid AAAA record length" << std::endl;
+                return "ERROROCCURED";
+            } else {
+                char ip6str[INET6_ADDRSTRLEN];
+                inet_ntop(AF_INET6, &record->rdata, ip6str, INET6_ADDRSTRLEN);
+                data = ip6str;
+            }
+            *offset += record->rdlength;
+            break;
+        } case DNS_SRV: {
+            dns_srv_record_t *srv = (dns_srv_record_t *)malloc(sizeof(dns_srv_record_t));
+            if (srv == NULL) {
+                std::cerr << "Malloc failed: answers_handler srv" << std::endl;
+                if (record != NULL) free(record);
+                return "ERROROCCURED"; // Handle allocation failure
+            }
+
+            memcpy(&srv->priority, &packet[*offset], 2); *offset += 2;
+            srv->priority = ntohs(srv->priority);
+
+            memcpy(&srv->weight, &packet[*offset], 2); *offset += 2;
+            srv->weight = ntohs(srv->weight);
+
+            memcpy(&srv->port, &packet[*offset], 2); *offset += 2;
+            srv->port = ntohs(srv->port);
+
+            string target = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
+
+            data = to_string(srv->priority) + " " + to_string(srv->weight) + " " + 
+                   to_string(srv->port) + " " + target;
+
+            if (srv != NULL) free(srv);
+            break;
+        } default: {
+            // Unsupported answer type, skip it
+            *offset += record->rdlength;
+            if (record != NULL) free(record);
+            return "CONTINUE";
+        }
+    }
+    return data;
 }
 
 void display_dns_packet(DnsPacket dnspacket, bool verbose) {
@@ -197,165 +280,6 @@ void display_dns_packet(DnsPacket dnspacket, bool verbose) {
     }
 }
 
-int answers_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
-    // Iterate through each answer in the DNS packet
-    for (int i = 0; i < dnspacket->header->an_count; i++) {
-        // Parse the domain name
-        string domain_name = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
-
-        // Allocate memory for the answer structure
-        dns_resource_record_t *answer = (dns_resource_record_t *)malloc(sizeof(dns_resource_record_t));
-        if (answer == NULL) {
-            std::cerr << "Malloc failed: answers_handler" << std::endl;
-            return RET_ERR; // Handle allocation failure appropriately
-        }
-
-        // Extract answer type
-        memcpy(&answer->type, &packet[*offset], 2);
-        answer->type = ntohs(answer->type);
-        *offset += 2;
-
-        // Extract answer class
-        memcpy(&answer->class_, &packet[*offset], 2);
-        answer->class_ = ntohs(answer->class_);
-        *offset += 2;
-
-        // Extract answer TTL
-        memcpy(&answer->ttl, &packet[*offset], 4);
-        answer->ttl = ntohl(answer->ttl);
-        *offset += 4;
-
-        // Extract answer data length
-        memcpy(&answer->rdlength, &packet[*offset], 2);
-        answer->rdlength = ntohs(answer->rdlength);
-        *offset += 2;
-
-        // Extract answer data
-        memcpy(&answer->rdata, &packet[*offset], answer->rdlength);
-
-        // Prepare to store the formatted answer string
-        ostringstream ans;
-        string data;
-
-        // Handle different answer types
-        switch (answer->type) {
-            case DNS_A: { // IPv4 address
-                if (answer->rdlength != 4) {
-                    std::cerr << "Invalid A record length" << std::endl;
-                    return RET_ERR;
-                } else {
-                    char ipstr[INET_ADDRSTRLEN];
-                    inet_ntop(AF_INET, &answer->rdata, ipstr, INET_ADDRSTRLEN);
-                    data = ipstr;
-                }
-                *offset += answer->rdlength;
-                break;
-            } case DNS_NS: { // Name server
-                data = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
-                break;
-            } case DNS_CNAME: { // Canonical name
-                data = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
-                break;
-            } case DNS_SOA: { // Start of authority
-                string mname = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
-                string rname = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
-
-                dns_soa_record_t *soa = (dns_soa_record_t *)malloc(sizeof(dns_soa_record_t));
-                if (soa == NULL) {
-                    std::cerr << "Malloc failed: answers_handler soa" << std::endl;
-                    free(answer);
-                    return RET_ERR; // Handle allocation failure
-                }
-
-                memcpy(&soa->serial, &packet[*offset], 4); *offset += 4; 
-                soa->serial = ntohl(soa->serial);
-        
-                memcpy(&soa->refresh, &packet[*offset], 4); *offset += 4;
-                soa->refresh = ntohl(soa->refresh);
-
-                memcpy(&soa->retry, &packet[*offset], 4); *offset += 4;
-                soa->retry = ntohl(soa->retry);
-
-                memcpy(&soa->expire, &packet[*offset], 4); *offset += 4;
-                soa->expire = ntohl(soa->expire);
-
-                memcpy(&soa->minimum, &packet[*offset], 4); *offset += 4;
-                soa->minimum = ntohl(soa->minimum);
-
-                data = mname + " " + rname + " " + 
-                       to_string(soa->serial) + " " + to_string(soa->refresh) + " " + 
-                       to_string(soa->retry) + " " + to_string(soa->expire) + " " + to_string(soa->minimum);
-        
-                free(soa);
-                break;
-            } case DNS_MX: { // Mail exchange
-
-                uint16_t preference;
-                memcpy(&preference, &packet[*offset], 2);
-
-                *offset += 2;
-                preference = ntohs(preference);
-
-                string mail = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
-                data = to_string(preference) + " " + mail;
-
-                break;
-            } case DNS_AAAA: { // IPv6 address
-                if (answer->rdlength != 16) {
-                    std::cerr << "Invalid AAAA record length" << std::endl;
-                    return RET_ERR;
-                } else {
-                    char ip6str[INET6_ADDRSTRLEN];
-                    inet_ntop(AF_INET6, &answer->rdata, ip6str, INET6_ADDRSTRLEN);
-                    data = ip6str;
-                }
-                *offset += answer->rdlength;
-                break;
-            } case DNS_SRV: {
-                dns_srv_record_t *srv = (dns_srv_record_t *)malloc(sizeof(dns_srv_record_t));
-                if (srv == NULL) {
-                    std::cerr << "Malloc failed: answers_handler srv" << std::endl;
-                    free(answer);
-                    return RET_ERR; // Handle allocation failure
-                }
-
-                memcpy(&srv->priority, &packet[*offset], 2); *offset += 2;
-                srv->priority = ntohs(srv->priority);
-
-                memcpy(&srv->weight, &packet[*offset], 2); *offset += 2;
-                srv->weight = ntohs(srv->weight);
-
-                memcpy(&srv->port, &packet[*offset], 2); *offset += 2;
-                srv->port = ntohs(srv->port);
-
-                string target = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
-
-                data = to_string(srv->priority) + " " + to_string(srv->weight) + " " + 
-                       to_string(srv->port) + " " + target;
-
-                free(srv);
-                break;
-            } default: {
-                // Unsupported answer type, skip it
-                *offset += answer->rdlength;
-                free(answer);
-                continue;
-            }
-        }
-
-        // Format the answer string and add it to the packet's answer list
-        ans << domain_name << " " << answer->ttl << " " << parse_dns_class(answer->class_) << " " << parse_dns_type(answer->type) << " " << data << endl;
-        
-        dnspacket->answers.push_back(ans.str());
-
-        // Free the answer structure
-        free(answer);
-    }
-
-    return RET_OK;
-}
-
-
 void questions_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
     for (int i = 0; i < dnspacket->header->qd_count; i++) {
         // avoiding using structure simmilar to dns header because domain name
@@ -366,7 +290,7 @@ void questions_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) 
         // i figured it out in wireshark, need to investigate further
         *offset += 4;
 
-        string domain = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
+        string domain = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
         
         const char *qtype = parse_dns_type(ntohs(*(uint16_t*)(packet + *offset)));
         *offset += 2; // always 2 bytes for both question type and class 
@@ -384,84 +308,86 @@ void questions_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) 
     }
 }
 
-void authority_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
-    cout << "Authority count: " << dnspacket->header->ns_count << endl; 
-    for (int i = 0; i < dnspacket->header->ns_count; i++) {
-        string domain_name = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
-        
-        dns_resource_record_t *auth = (dns_resource_record_t *)malloc(sizeof(dns_resource_record_t));
-        if (auth == NULL) {
-            std::cerr << "Malloc failed: authority_handler" << std::endl;
-            return; // Handle allocation failure appropriately
-        }
-
-        // Extract authority type
-        memcpy(&auth->type, &packet[*offset], 2);
-        auth->type = ntohs(auth->type);
-        *offset += 2;
-
-        // Extract authority class
-        memcpy(&auth->class_, &packet[*offset], 2);
-        auth->class_ = ntohs(auth->class_);
-        *offset += 2;
-
-        // Extract authority TTL
-        memcpy(&auth->ttl, &packet[*offset], 4);
-        auth->ttl = ntohl(auth->ttl);
-        *offset += 4;
-
-        // Extract authority data length
-        memcpy(&auth->rdlength, &packet[*offset], 2);
-        auth->rdlength = ntohs(auth->rdlength);
-        *offset += 2;
-
-        ostringstream ans;
-        string data;
-
-        switch (auth->type) {
-            case DNS_NS: {
-                data = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
-                break;
-            } case DNS_SOA: { // Start of authority
-                string mname = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
-                string rname = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
-
-                dns_soa_record_t *soa = (dns_soa_record_t *)malloc(sizeof(dns_soa_record_t));
-                if (soa == NULL) {
-                    std::cerr << "Malloc failed: answers_handler soa" << std::endl;
-                    free(auth);
-                    return; // Handle allocation failure
-                }
-
-                memcpy(&soa->serial, &packet[*offset], 4); *offset += 4; 
-                soa->serial = ntohl(soa->serial);
-        
-                memcpy(&soa->refresh, &packet[*offset], 4); *offset += 4;
-                soa->refresh = ntohl(soa->refresh);
-
-                memcpy(&soa->retry, &packet[*offset], 4); *offset += 4;
-                soa->retry = ntohl(soa->retry);
-
-                memcpy(&soa->expire, &packet[*offset], 4); *offset += 4;
-                soa->expire = ntohl(soa->expire);
-
-                memcpy(&soa->minimum, &packet[*offset], 4); *offset += 4;
-                soa->minimum = ntohl(soa->minimum);
-
-                data = mname + " " + rname + " " + 
-                       to_string(soa->serial) + " " + to_string(soa->refresh) + " " + 
-                       to_string(soa->retry) + " " + to_string(soa->expire) + " " + to_string(soa->minimum);
-        
-                free(soa);
-                break;
-            }
-        }
-
-        ans << domain_name << " " << auth->ttl << " " << parse_dns_class(auth->class_) << " " << parse_dns_type(auth->type) << " " << data << endl;
-        dnspacket->authorities.push_back(ans.str());
-
-        free(auth);
+dns_resource_record_t *extract_record(const u_char *packet, int *offset) {
+    dns_resource_record_t *record = (dns_resource_record_t *)malloc(sizeof(dns_resource_record_t));
+    if (record == NULL) {
+        cerr << "Malloc failed for dns_resource_record" << endl;
+        return NULL;
     }
+
+    // Extract record type
+    memcpy(&record->type, &packet[*offset], 2);
+    record->type = ntohs(record->type);
+    *offset += 2;
+
+    // Extract record class
+    memcpy(&record->class_, &packet[*offset], 2);
+    record->class_ = ntohs(record->class_);
+    *offset += 2;
+
+    // Extract record TTL
+    memcpy(&record->ttl, &packet[*offset], 4);
+    record->ttl = ntohl(record->ttl);
+    *offset += 4;
+
+    // Extract record data length
+    memcpy(&record->rdlength, &packet[*offset], 2);
+    record->rdlength = ntohs(record->rdlength);
+    *offset += 2;
+
+    // Extract record data
+    memcpy(&record->rdata, &packet[*offset], record->rdlength);
+
+    return record;
+}
+
+// mode == 0 -> answers section
+// mode == 1 -> authority section
+// mode == 2 -> additional section
+int process_sections(int mode, DnsPacket *dnspacket, const u_char *packet, int *offset) {
+    int n;
+    vector<string>& storageStream = (mode == 0) ? dnspacket->answers : dnspacket->authorities;
+
+    switch (mode) {
+        case 0:
+            n = dnspacket->header->an_count;
+            storageStream = dnspacket->answers;
+            break;
+        case 1:
+            n = dnspacket->header->ns_count;
+            storageStream = dnspacket->authorities;
+            break;
+        default:
+            return RET_ERR;
+    }
+
+    for (int i = 0; i < n; i++) {
+        // Parse domain name
+        string domain_name = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
+
+        // Parse record data (type, class, ttl, data length, data)
+        dns_resource_record_t *record = extract_record(packet, offset);
+        if (record == NULL) return RET_ERR;
+
+        // Handle different answer types
+        string data = process_dns_record(dnspacket, record, packet, offset);
+        if (!data.compare("CONTINUE")) continue;
+        if (!data.compare("ERROROCCURED")) return RET_ERR;
+
+        // Prepare to store the formatted answer string
+        ostringstream ans;
+
+        // Format the answer string and add it to the packet's answer list
+        ans << domain_name << " " << record->ttl << " " << parse_dns_class(record->class_) << " " << parse_dns_type(record->type) << " " << data << endl;
+
+        // Store record data to DNS packet
+        storageStream.push_back(ans.str());
+
+        // Free the answer structure
+        if (record != NULL) free(record);
+    }
+
+    return RET_OK;
 }
 
 void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
@@ -496,8 +422,8 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
     // Proceed to parse DNS records (questions, answer, etc.)
 
     questions_handler(dnspacket, packet, &offset);
-    answers_handler(dnspacket, packet, &offset);
-    authority_handler(dnspacket, packet, &offset);
+    process_sections(0, dnspacket, packet, &offset);
+    process_sections(1, dnspacket, packet, &offset);
     display_dns_packet(*dnspacket, true);
 
     delete dnspacket;

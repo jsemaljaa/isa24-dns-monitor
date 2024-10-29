@@ -28,5 +28,6 @@
 
 parameters get_app_config(int argc, char* argv[]);
 void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
+dns_resource_record_t *extract_record(const u_char *packet, int *offset);
 
 #endif //DNS_MONITOR_H
