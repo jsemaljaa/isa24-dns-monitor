@@ -10,14 +10,14 @@
 #include <unistd.h>
 #include <stdlib.h> // for exit()
 
-struct parameters {
+typedef struct parameters {
     std::string interface;
     std::string pcapfile;
     bool verbose = false;
     std::string domainsfile;
     std::string translationsfile;
-};
+} parameters_t;
 
-parameters parse(int argc, char* argv[]);
+parameters_t parse(int argc, char* argv[]);
 
 #endif //PARAMETERS_H

@@ -6,6 +6,10 @@
 
 using namespace std;
 
+parameters_t config;
+// Set of unique domain names seen during captured DNS communication
+set<string> seenDomainNames;
+
 // https://en.wikipedia.org/wiki/List_of_DNS_record_types
 const char *parse_dns_type(uint16_t type) {
     switch (type) {
@@ -37,7 +41,7 @@ const char *parse_dns_class(uint16_t qclass) {
     }
 }
 
-parameters get_app_config(int argc, char *argv[]) {
+parameters_t get_app_config(int argc, char *argv[]) {
     parameters config = parse(argc, argv);
     return config;
 }
@@ -99,7 +103,6 @@ string parse_dns_string(const u_char *stream, int *offset, const u_char *DNSstre
             *offset += len;
         }
     }
-
     return domain;
 }
 
@@ -119,18 +122,22 @@ string process_dns_record(DnsPacket *dnspacket, dns_resource_record_t *record, c
             break;
         } case DNS_NS: { // Name server
             data = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
+            seenDomainNames.insert(data);
             break;
         } case DNS_CNAME: { // Canonical name
             data = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
+            seenDomainNames.insert(data);
             break;
         } case DNS_SOA: { // Start of authority
             string mname = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
+            seenDomainNames.insert(mname);
             string rname = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
+            seenDomainNames.insert(rname);
 
             dns_soa_record_t *soa = (dns_soa_record_t *)malloc(sizeof(dns_soa_record_t));
             if (soa == NULL) {
                 std::cerr << "Malloc failed: answers_handler soa" << std::endl;
-                if (record != NULL) free(record);
+                free(record);
                 return "ERROROCCURED"; // Handle allocation failure
             }
 
@@ -153,7 +160,7 @@ string process_dns_record(DnsPacket *dnspacket, dns_resource_record_t *record, c
                        to_string(soa->serial) + " " + to_string(soa->refresh) + " " + 
                        to_string(soa->retry) + " " + to_string(soa->expire) + " " + to_string(soa->minimum);
         
-            if (soa != NULL) free(soa);
+            free(soa);
             break;
         } case DNS_MX: { // Mail exchange
             uint16_t preference;
@@ -163,6 +170,7 @@ string process_dns_record(DnsPacket *dnspacket, dns_resource_record_t *record, c
             preference = ntohs(preference);
 
             string mail = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
+            seenDomainNames.insert(mail);
             data = to_string(preference) + " " + mail;
                 
             break;
@@ -181,7 +189,7 @@ string process_dns_record(DnsPacket *dnspacket, dns_resource_record_t *record, c
             dns_srv_record_t *srv = (dns_srv_record_t *)malloc(sizeof(dns_srv_record_t));
             if (srv == NULL) {
                 std::cerr << "Malloc failed: answers_handler srv" << std::endl;
-                if (record != NULL) free(record);
+                free(record);
                 return "ERROROCCURED"; // Handle allocation failure
             }
 
@@ -195,16 +203,17 @@ string process_dns_record(DnsPacket *dnspacket, dns_resource_record_t *record, c
             srv->port = ntohs(srv->port);
 
             string target = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
+            seenDomainNames.insert(target);
 
             data = to_string(srv->priority) + " " + to_string(srv->weight) + " " + 
                    to_string(srv->port) + " " + target;
 
-            if (srv != NULL) free(srv);
+            free(srv);
             break;
         } default: {
             // Unsupported answer type, skip it
             *offset += record->rdlength;
-            if (record != NULL) free(record);
+            free(record);
             return "CONTINUE";
         }
     }
@@ -219,8 +228,7 @@ void display_dns_packet(DnsPacket dnspacket, bool verbose) {
         cout << "DstIP: " << dnspacket.header->dst_ip << endl;
         cout << "SrcPort: UDP/" << dnspacket.header->src_port << endl;
         cout << "DstPort: UDP/" << dnspacket.header->dst_port << endl;
-        // cout << "Identifier: " << hex << uppercase << "0x" << ntohs(dnsh->id) << endl;
-        cout << "Identifier: " << dnspacket.header->id << endl;
+        cout << "Identifier: 0x" << hex << setw(4) << setfill('0') << dnspacket.header->id << dec << endl;
         cout << "Flags: ";
             cout << "QR=" << dnspacket.header->get_qr() << ", ";
             cout << "OPCODE=" << dnspacket.header->get_opcode() << ", ";
@@ -234,38 +242,51 @@ void display_dns_packet(DnsPacket dnspacket, bool verbose) {
         
         cout << endl; 
 
-        if (!(dnspacket.questions.empty() && dnspacket.header->qd_count == 0)) {
+        if (!dnspacket.questions.empty()) {
             cout << "[Question Section]" << endl;
             
             for (const std::string& q : dnspacket.questions) {
-                if (!q.empty()) cout << q;
+                if (!q.empty()) {
+                    cout << q;
+                } 
             }
-            
             cout << endl;
         }
 
-        if (!(dnspacket.answers.empty() && dnspacket.header->an_count == 0)) {
+        if (!dnspacket.answers.empty()) {
             cout << "[Answer Section]" << endl;
             // google.com. 300 IN A 142.250.183.142
             // [name] [TTL] [class] [type] [data]
 
             for (const string &a : dnspacket.answers) {
-                if (!a.empty()) cout << a;
+                if (!a.empty()) {
+                    cout << a;
+                }
             }
-            
             cout << endl;
         }
 
-        if (!(dnspacket.authorities.empty() && dnspacket.header->ns_count == 0)) {
+        if (!dnspacket.authorities.empty()) {
             cout << "[Authority Section]" << endl;
             // google.com. 300 IN A 142.250.183.142
             // [name] [TTL] [class] [type] [data]
 
-            for (const string &a : dnspacket.authorities) {
-                if (!a.empty()) cout << a;
+            for (const string &au : dnspacket.authorities) {
+                if (!au.empty()) {
+                    cout << au;
+                } 
             }
-            
             cout << endl;
+        }
+
+        if (!dnspacket.additionals.empty()) {
+            cout << "[Additional Section]" << endl;
+
+            for (const string &ad : dnspacket.additionals) {
+                if (!ad.empty()) {
+                    cout << ad;
+                } 
+            }
         }
         
         cout << "====================" << endl;
@@ -291,11 +312,15 @@ void questions_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) 
         *offset += 4;
 
         string domain = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
+        seenDomainNames.insert(domain);
         
         const char *qtype = parse_dns_type(ntohs(*(uint16_t*)(packet + *offset)));
         *offset += 2; // always 2 bytes for both question type and class 
 
-        if (!strcmp(qtype, "UNKNWN")) continue;
+        if (!strcmp(qtype, "UNKNWN")) {
+            dnspacket->questions.push_back("Record type not supported\n");
+            continue;
+        }
         
         const char *qclass = parse_dns_class(ntohs(*(uint16_t*)(packet + *offset)));
         *offset += 2;
@@ -335,8 +360,15 @@ dns_resource_record_t *extract_record(const u_char *packet, int *offset) {
     record->rdlength = ntohs(record->rdlength);
     *offset += 2;
 
+    size_t resizeRecord = sizeof(dns_resource_record_t) - sizeof(record->rdata) + record->rdlength;
+    record = (dns_resource_record_t *)realloc(record, resizeRecord);
+
+    if (record == NULL) {
+        cerr << "Realloc failed for dns_resource_record" << endl;
+    }
+
     // Extract record data
-    memcpy(&record->rdata, &packet[*offset], record->rdlength);
+    memcpy(&record->rdata, &packet[*offset], record->rdlength); 
 
     return record;
 }
@@ -346,24 +378,25 @@ dns_resource_record_t *extract_record(const u_char *packet, int *offset) {
 // mode == 2 -> additional section
 int process_sections(int mode, DnsPacket *dnspacket, const u_char *packet, int *offset) {
     int n;
-    vector<string>& storageStream = (mode == 0) ? dnspacket->answers : dnspacket->authorities;
+    vector<string>* storageStream;
 
-    switch (mode) {
-        case 0:
-            n = dnspacket->header->an_count;
-            storageStream = dnspacket->answers;
-            break;
-        case 1:
-            n = dnspacket->header->ns_count;
-            storageStream = dnspacket->authorities;
-            break;
-        default:
-            return RET_ERR;
+    if (mode == MODE_ANSWERS) {
+        storageStream = &dnspacket->answers;
+        n = dnspacket->header->an_count;
+    } else if (mode == MODE_AUTHORITY) {
+        storageStream = &dnspacket->authorities;
+        n = dnspacket->header->ns_count;
+    } else if (mode == MODE_ADDITIONAL) {
+        storageStream = &dnspacket->additionals;
+        n = dnspacket->header->ar_count;
+    } else {
+        return RET_ERR;
     }
-
+    
     for (int i = 0; i < n; i++) {
         // Parse domain name
         string domain_name = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
+        seenDomainNames.insert(domain_name);
 
         // Parse record data (type, class, ttl, data length, data)
         dns_resource_record_t *record = extract_record(packet, offset);
@@ -371,20 +404,27 @@ int process_sections(int mode, DnsPacket *dnspacket, const u_char *packet, int *
 
         // Handle different answer types
         string data = process_dns_record(dnspacket, record, packet, offset);
-        if (!data.compare("CONTINUE")) continue;
-        if (!data.compare("ERROROCCURED")) return RET_ERR;
+
+        if (!data.compare("CONTINUE")) {
+            storageStream->push_back("Record type not supported\n");
+            continue;
+        }
+
+        if (!data.compare("ERROROCCURED")) {
+            return RET_ERR;
+        }
 
         // Prepare to store the formatted answer string
         ostringstream ans;
 
         // Format the answer string and add it to the packet's answer list
         ans << domain_name << " " << record->ttl << " " << parse_dns_class(record->class_) << " " << parse_dns_type(record->type) << " " << data << endl;
-
+        
         // Store record data to DNS packet
-        storageStream.push_back(ans.str());
+        storageStream->push_back(ans.str());
 
         // Free the answer structure
-        if (record != NULL) free(record);
+        free(record);
     }
 
     return RET_OK;
@@ -419,12 +459,40 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
 
     offset += sizeof(dnshdr);
 
-    // Proceed to parse DNS records (questions, answer, etc.)
+    // Proceed to parse DNS records (questions, answers, etc.)
 
     questions_handler(dnspacket, packet, &offset);
-    process_sections(0, dnspacket, packet, &offset);
-    process_sections(1, dnspacket, packet, &offset);
+
+    process_sections(MODE_ANSWERS, dnspacket, packet, &offset);
+    process_sections(MODE_AUTHORITY, dnspacket, packet, &offset);
+    process_sections(MODE_ADDITIONAL, dnspacket, packet, &offset);
+
     display_dns_packet(*dnspacket, true);
+
+    set<string> savedDomains;
+    
+    if (!config.domainsfile.empty()) {
+        ifstream inputFile(config.domainsfile);
+        string line;
+        if (inputFile.is_open()) {
+            while (getline(inputFile, line)) {
+                savedDomains.insert(line);
+            }
+        }
+
+        if (!(savedDomains == seenDomainNames)) {
+            ofstream outputFile(config.domainsfile);
+            if (outputFile.is_open()) {
+                for (const string& domain : seenDomainNames) {
+                    // Only want to insert domains that aren't yet present in file
+                    if (savedDomains.find(domain) == savedDomains.end()) {
+                        outputFile << domain << endl;
+                    }
+                }
+                outputFile.close();
+            }
+        }
+    }
 
     delete dnspacket;
 }
@@ -432,8 +500,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
 int main(int argc, char* argv[]) {
 
     // cout << "Byte order: " << (__BYTE_ORDER == __BIG_ENDIAN ? "BIG_ENDIAN" : "LITTLE_ENDIAN") << endl;
-
-    parameters config = get_app_config(argc, argv);
+    config = get_app_config(argc, argv);
 
     pcap_t *handle = nullptr;
     char errbuf[PCAP_ERRBUF_SIZE];

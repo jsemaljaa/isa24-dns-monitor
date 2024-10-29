@@ -18,6 +18,7 @@ DnsHeader::DnsHeader(dns_header_t *dnsh, struct udphdr *udph, struct ip *iph, co
 
     src_port = ntohs(udph->source);
     dst_port = ntohs(udph->dest);
+    
 
     timestamp = convert_timestamp(ts);
 }
@@ -28,8 +29,11 @@ std::string DnsHeader::convert_timestamp(const struct timeval ts) {
 
     std::ostringstream oss;
     oss << std::put_time(&timestamp, "%Y-%m-%d %H:%M:%S");
+
     return oss.str();
 }
+
+
 
 uint16_t DnsHeader::get_qr() {
     return MASK_FLAG(flags, QR_MASK, QR_SHIFT);

@@ -1,7 +1,7 @@
 # Makefile for dns-monitor
 
 CC = g++
-CFLAGS = -Wall -Wextra -pedantic -g
+CFLAGS = -Wall -Wextra -pedantic -g -fsanitize=address
 TARGET = dns-monitor
 
 # files

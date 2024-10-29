@@ -15,7 +15,6 @@
 #include <fstream>
 #include <iostream>
 
-
 // Project headers
 #include "parameters.h"
 #include "dns_packet.h"
@@ -25,6 +24,10 @@
 
 #define RET_OK 0
 #define RET_ERR 1
+
+#define MODE_ANSWERS 0
+#define MODE_AUTHORITY 1
+#define MODE_ADDITIONAL 2
 
 parameters get_app_config(int argc, char* argv[]);
 void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);

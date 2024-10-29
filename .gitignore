@@ -7,3 +7,5 @@ dns-monitor
 .vscode/
 wslapps
 test.sh
+doc
+v6(1).pcap

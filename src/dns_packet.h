@@ -13,6 +13,7 @@
 #include <sstream>
 #include <iomanip>
 #include <queue>
+#include <set>
 
 /* 
     16b flags structure
@@ -166,7 +167,9 @@ class DnsPacket {
         std::vector<std::string> questions;
         std::vector<std::string> answers;
         std::vector<std::string> authorities;
-        // std::vector<std::string> additionals;
+        std::vector<std::string> additionals;
+
+
 
         DnsPacket();
 };

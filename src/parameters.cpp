@@ -4,8 +4,8 @@
 
 #include "parameters.h"
 
-parameters parse(int argc, char* argv[]) {
-    parameters p;
+parameters_t parse(int argc, char* argv[]) {
+    parameters_t p;
     int opt;
 
     while ((opt = getopt(argc, argv, "i:p:vd:t:")) != -1) {
@@ -27,7 +27,7 @@ parameters parse(int argc, char* argv[]) {
                 break;
             default:
                 std::cerr << "Usage: ./dns-monitor (-i <interface> | -p <pcapfile>) [-v] [-d <domainsfile>] [-t <translationsfile>]\n";
-            exit(EXIT_FAILURE);
+                exit(EXIT_FAILURE);
         }
     }
 
