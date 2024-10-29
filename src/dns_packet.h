@@ -93,16 +93,16 @@ typedef struct dns_header {
     uint16_t ar_count; // number of additional entries
 } dns_header_t;
 
-// structure to parse Answer
-typedef struct dns_answer {
+// Structure to parse DNS records
+typedef struct dns_resource_record {
     uint16_t type;
     uint16_t class_;
     uint32_t ttl;
     uint16_t rdlength;
     uint16_t rdata;
-    // unsigned char* rdata; // Pointer to the variable-length RDATA
-} dns_answer_t;
+} dns_resource_record_t;
 
+// Special cases of DNS records: SOA and SRV
 typedef struct dns_soa_record {
     uint32_t serial;
     uint32_t refresh;
@@ -116,8 +116,6 @@ typedef struct dns_srv_record {
     uint16_t weight;
     uint16_t port;
 } dns_srv_record_t;
-
-// , Authority and Additional sections
 
 /*
     This class is not conventional DNS header, but rather header that will suite needs 
@@ -156,6 +154,7 @@ class DnsHeader {
 		uint16_t get_rcode();
 
     private:
+        // CAUTION: convert timestamp throws segfault sometimes
         std::string convert_timestamp(const struct timeval ts);
 };
 
@@ -166,6 +165,8 @@ class DnsPacket {
 
         std::vector<std::string> questions;
         std::vector<std::string> answers;
+        std::vector<std::string> authorities;
+        // std::vector<std::string> additionals;
 
         DnsPacket();
 };

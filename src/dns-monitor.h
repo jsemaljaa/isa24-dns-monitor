@@ -23,6 +23,9 @@
 #define SIZE_ETHERNET_HDR 14
 #define MIN_DNS_HDR_SIZE 12
 
+#define RET_OK 0
+#define RET_ERR 1
+
 parameters get_app_config(int argc, char* argv[]);
 void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
 

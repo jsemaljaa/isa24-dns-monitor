@@ -6,9 +6,6 @@
 
 using namespace std;
 
-// g++ -o dns-monitor dns-monitor.cpp -lpcap
-// dig -p 53 domain.com @8.8.8.8
-
 
 void debug_display_offset(int *offset) {
     cout << "[DEBUG] Current offset: " << *offset << endl;
@@ -175,6 +172,18 @@ void display_dns_packet(DnsPacket dnspacket, bool verbose) {
             
             cout << endl;
         }
+
+        if (!(dnspacket.authorities.empty() && dnspacket.header->ns_count == 0)) {
+            cout << "[Authority Section]" << endl;
+            // google.com. 300 IN A 142.250.183.142
+            // [name] [TTL] [class] [type] [data]
+
+            for (const string &a : dnspacket.authorities) {
+                if (!a.empty()) cout << a;
+            }
+            
+            cout << endl;
+        }
         
         cout << "====================" << endl;
     } else {
@@ -188,17 +197,17 @@ void display_dns_packet(DnsPacket dnspacket, bool verbose) {
     }
 }
 
-void answers_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
+int answers_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
     // Iterate through each answer in the DNS packet
     for (int i = 0; i < dnspacket->header->an_count; i++) {
         // Parse the domain name
         string domain_name = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
 
         // Allocate memory for the answer structure
-        dns_answer_t *answer = (dns_answer_t *)malloc(sizeof(dns_answer_t));
+        dns_resource_record_t *answer = (dns_resource_record_t *)malloc(sizeof(dns_resource_record_t));
         if (answer == NULL) {
             std::cerr << "Malloc failed: answers_handler" << std::endl;
-            return; // Handle allocation failure appropriately
+            return RET_ERR; // Handle allocation failure appropriately
         }
 
         // Extract answer type
@@ -233,6 +242,7 @@ void answers_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
             case DNS_A: { // IPv4 address
                 if (answer->rdlength != 4) {
                     std::cerr << "Invalid A record length" << std::endl;
+                    return RET_ERR;
                 } else {
                     char ipstr[INET_ADDRSTRLEN];
                     inet_ntop(AF_INET, &answer->rdata, ipstr, INET_ADDRSTRLEN);
@@ -254,7 +264,7 @@ void answers_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
                 if (soa == NULL) {
                     std::cerr << "Malloc failed: answers_handler soa" << std::endl;
                     free(answer);
-                    return; // Handle allocation failure
+                    return RET_ERR; // Handle allocation failure
                 }
 
                 memcpy(&soa->serial, &packet[*offset], 4); *offset += 4; 
@@ -292,7 +302,8 @@ void answers_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
                 break;
             } case DNS_AAAA: { // IPv6 address
                 if (answer->rdlength != 16) {
-                std::cerr << "Invalid AAAA record length" << std::endl;
+                    std::cerr << "Invalid AAAA record length" << std::endl;
+                    return RET_ERR;
                 } else {
                     char ip6str[INET6_ADDRSTRLEN];
                     inet_ntop(AF_INET6, &answer->rdata, ip6str, INET6_ADDRSTRLEN);
@@ -305,7 +316,7 @@ void answers_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
                 if (srv == NULL) {
                     std::cerr << "Malloc failed: answers_handler srv" << std::endl;
                     free(answer);
-                    return; // Handle allocation failure
+                    return RET_ERR; // Handle allocation failure
                 }
 
                 memcpy(&srv->priority, &packet[*offset], 2); *offset += 2;
@@ -326,8 +337,8 @@ void answers_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
                 break;
             } default: {
                 // Unsupported answer type, skip it
-                free(answer);
                 *offset += answer->rdlength;
+                free(answer);
                 continue;
             }
         }
@@ -340,6 +351,8 @@ void answers_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
         // Free the answer structure
         free(answer);
     }
+
+    return RET_OK;
 }
 
 
@@ -368,6 +381,86 @@ void questions_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) 
         string dnsquestion = oss.str();
 
         dnspacket->questions.push_back(dnsquestion);
+    }
+}
+
+void authority_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
+    cout << "Authority count: " << dnspacket->header->ns_count << endl; 
+    for (int i = 0; i < dnspacket->header->ns_count; i++) {
+        string domain_name = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
+        
+        dns_resource_record_t *auth = (dns_resource_record_t *)malloc(sizeof(dns_resource_record_t));
+        if (auth == NULL) {
+            std::cerr << "Malloc failed: authority_handler" << std::endl;
+            return; // Handle allocation failure appropriately
+        }
+
+        // Extract authority type
+        memcpy(&auth->type, &packet[*offset], 2);
+        auth->type = ntohs(auth->type);
+        *offset += 2;
+
+        // Extract authority class
+        memcpy(&auth->class_, &packet[*offset], 2);
+        auth->class_ = ntohs(auth->class_);
+        *offset += 2;
+
+        // Extract authority TTL
+        memcpy(&auth->ttl, &packet[*offset], 4);
+        auth->ttl = ntohl(auth->ttl);
+        *offset += 4;
+
+        // Extract authority data length
+        memcpy(&auth->rdlength, &packet[*offset], 2);
+        auth->rdlength = ntohs(auth->rdlength);
+        *offset += 2;
+
+        ostringstream ans;
+        string data;
+
+        switch (auth->type) {
+            case DNS_NS: {
+                data = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
+                break;
+            } case DNS_SOA: { // Start of authority
+                string mname = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
+                string rname = parse_domain_name(packet, offset, dnspacket->header->DNSstream);
+
+                dns_soa_record_t *soa = (dns_soa_record_t *)malloc(sizeof(dns_soa_record_t));
+                if (soa == NULL) {
+                    std::cerr << "Malloc failed: answers_handler soa" << std::endl;
+                    free(auth);
+                    return; // Handle allocation failure
+                }
+
+                memcpy(&soa->serial, &packet[*offset], 4); *offset += 4; 
+                soa->serial = ntohl(soa->serial);
+        
+                memcpy(&soa->refresh, &packet[*offset], 4); *offset += 4;
+                soa->refresh = ntohl(soa->refresh);
+
+                memcpy(&soa->retry, &packet[*offset], 4); *offset += 4;
+                soa->retry = ntohl(soa->retry);
+
+                memcpy(&soa->expire, &packet[*offset], 4); *offset += 4;
+                soa->expire = ntohl(soa->expire);
+
+                memcpy(&soa->minimum, &packet[*offset], 4); *offset += 4;
+                soa->minimum = ntohl(soa->minimum);
+
+                data = mname + " " + rname + " " + 
+                       to_string(soa->serial) + " " + to_string(soa->refresh) + " " + 
+                       to_string(soa->retry) + " " + to_string(soa->expire) + " " + to_string(soa->minimum);
+        
+                free(soa);
+                break;
+            }
+        }
+
+        ans << domain_name << " " << auth->ttl << " " << parse_dns_class(auth->class_) << " " << parse_dns_type(auth->type) << " " << data << endl;
+        dnspacket->authorities.push_back(ans.str());
+
+        free(auth);
     }
 }
 
@@ -404,7 +497,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
 
     questions_handler(dnspacket, packet, &offset);
     answers_handler(dnspacket, packet, &offset);
-
+    authority_handler(dnspacket, packet, &offset);
     display_dns_packet(*dnspacket, true);
 
     delete dnspacket;
