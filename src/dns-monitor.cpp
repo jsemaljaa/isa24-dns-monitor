@@ -608,7 +608,7 @@ int main(int argc, char* argv[]) {
     /* PCAP FILTER */
     char filter[] = "udp port 53";
     struct bpf_program fp;
-    bpf_u_int32 net;
+    bpf_u_int32 net = 0;
 
     if (!config.interface.empty()) {
         handle = pcap_open_live(config.interface.c_str(), BUFSIZ, 1, 1000, errbuf);
