@@ -1,8 +1,16 @@
-//
-// Created by Alina Vinogradova on 9/21/2024.
-//
+/*
+ * Project: DNS Monitor
+ *
+ * dns-monitor.cpp
+ * Created on 21/09/2024
+ * 
+ * @brief Functions to read network data from a stream (either live interface or PCAP file), 
+ *        to process these data and to display it accordingly
+ *
+ * @author Alina Vinogradova <xvinog00@vutbr.cz>
+*/
 
-#include "dns-monitor.h"
+#include "dns-monitor.hpp"
 
 using namespace std;
 
@@ -231,85 +239,86 @@ string process_dns_record(DnsPacket *dnspacket, dns_resource_record_t *record, c
     return data;
 }
 
-void display_dns_packet(DnsPacket dnspacket, bool verbose) {
+void display_dns_packet_verbose(DnsPacket dnspacket) {
 
-    if (verbose) {
-        cout << "Timestamp: " << dnspacket.header->timestamp << endl;
-        cout << "SrcIP: " << dnspacket.header->src_ip << endl;
-        cout << "DstIP: " << dnspacket.header->dst_ip << endl;
-        cout << "SrcPort: UDP/" << dnspacket.header->src_port << endl;
-        cout << "DstPort: UDP/" << dnspacket.header->dst_port << endl;
-        cout << "Identifier: 0x" << hex << setw(4) << setfill('0') << dnspacket.header->id << dec << endl;
-        cout << "Flags: ";
-            cout << "QR=" << dnspacket.header->get_qr() << ", ";
-            cout << "OPCODE=" << dnspacket.header->get_opcode() << ", ";
-            cout << "AA=" << dnspacket.header->get_aa() << ", ";
-            cout << "TC=" << dnspacket.header->get_tc() << ", ";
-            cout << "RD=" << dnspacket.header->get_rd() << ", ";
-            cout << "RA=" << dnspacket.header->get_ra() << ", ";
-            cout << "AD=" << dnspacket.header->get_ad() << ", ";
-            cout << "CD=" << dnspacket.header->get_cd() << ", ";
-            cout << "RCODE=" << dnspacket.header->get_rcode() << endl;
+    // Don't display a packet, if every single record in this packet is not supported 
+    if (dnspacket.questions.empty() && dnspacket.answers.empty() && dnspacket.authorities.empty() && dnspacket.additionals.empty())
+        return;
         
-        cout << endl; 
-
-        if (!dnspacket.questions.empty()) {
-            cout << "[Question Section]" << endl;
-            
-            for (const std::string& q : dnspacket.questions) {
-                if (!q.empty()) {
-                    cout << q;
-                } 
-            }
-            cout << endl;
-        }
-
-        if (!dnspacket.answers.empty()) {
-            cout << "[Answer Section]" << endl;
-            // google.com. 300 IN A 142.250.183.142
-            // [name] [TTL] [class] [type] [data]
-
-            for (const string &a : dnspacket.answers) {
-                if (!a.empty()) {
-                    cout << a;
-                }
-            }
-            cout << endl;
-        }
-
-        if (!dnspacket.authorities.empty()) {
-            cout << "[Authority Section]" << endl;
-            // google.com. 300 IN A 142.250.183.142
-            // [name] [TTL] [class] [type] [data]
-
-            for (const string &au : dnspacket.authorities) {
-                if (!au.empty()) {
-                    cout << au;
-                } 
-            }
-            cout << endl;
-        }
-
-        if (!dnspacket.additionals.empty()) {
-            cout << "[Additional Section]" << endl;
-
-            for (const string &ad : dnspacket.additionals) {
-                if (!ad.empty()) {
-                    cout << ad;
-                } 
-            }
-        }
+    cout << "Timestamp: " << dnspacket.header->timestamp << endl;
+    cout << "SrcIP: " << dnspacket.header->src_ip << endl;
+    cout << "DstIP: " << dnspacket.header->dst_ip << endl;
+    cout << "SrcPort: UDP/" << dnspacket.header->src_port << endl;
+    cout << "DstPort: UDP/" << dnspacket.header->dst_port << endl;
+    cout << "Identifier: 0x" << hex << uppercase << setw(4) << setfill('0') << dnspacket.header->id << dec << endl;
+    cout << "Flags: ";
+        cout << "QR=" << dnspacket.header->get_qr() << ", ";
+        cout << "OPCODE=" << dnspacket.header->get_opcode() << ", ";
+        cout << "AA=" << dnspacket.header->get_aa() << ", ";
+        cout << "TC=" << dnspacket.header->get_tc() << ", ";
+        cout << "RD=" << dnspacket.header->get_rd() << ", ";
+        cout << "RA=" << dnspacket.header->get_ra() << ", ";
+        cout << "AD=" << dnspacket.header->get_ad() << ", ";
+        cout << "CD=" << dnspacket.header->get_cd() << ", ";
+        cout << "RCODE=" << dnspacket.header->get_rcode() << endl;
         
-        cout << "====================" << endl;
-    } else {
-        cout << dnspacket.header->timestamp << " ";
-        cout << dnspacket.header->src_ip << " -> " << dnspacket.header->dst_ip << " ";
-        cout << "(" << ((dnspacket.header->get_qr() == 1) ? "R" : "Q") << " ";
-        cout << dnspacket.header->qd_count << "/";
-        cout << dnspacket.header->an_count << "/";
-        cout << dnspacket.header->ns_count << "/";
-        cout << dnspacket.header->ar_count << ")" << endl;
+    cout << endl; 
+
+    if (!dnspacket.questions.empty()) {
+        cout << "[Question Section]" << endl;
+        for (const std::string& q : dnspacket.questions) {
+            if (!q.empty()) {
+                cout << q;
+            } 
+        }
+        if (!(dnspacket.answers.empty() && dnspacket.authorities.empty() && dnspacket.additionals.empty())) {
+            cout << endl;
+        }
     }
+
+    if (!dnspacket.answers.empty()) {
+        cout << "[Answer Section]" << endl;
+        for (const string &a : dnspacket.answers) {
+            if (!a.empty()) {
+                cout << a;
+            }
+        }
+        if (!(dnspacket.authorities.empty() && dnspacket.additionals.empty())) {
+            cout << endl;
+        }
+    }
+
+    if (!dnspacket.authorities.empty()) {
+        cout << "[Authority Section]" << endl;
+        for (const string &au : dnspacket.authorities) {
+            if (!au.empty()) {
+                cout << au;
+            } 
+        }
+        if (!(dnspacket.additionals.empty())) {
+            cout << endl;
+        }
+    }
+
+    if (!dnspacket.additionals.empty()) {
+        cout << "[Additional Section]" << endl;
+        for (const string &ad : dnspacket.additionals) {
+            if (!ad.empty()) {
+                cout << ad;
+            } 
+        }
+    }
+    cout << "====================" << endl;
+}
+
+void display_dns_packet_short(DnsPacket dnspacket) {
+    cout << dnspacket.header->timestamp << " ";
+    cout << dnspacket.header->src_ip << " -> " << dnspacket.header->dst_ip << " ";
+    cout << "(" << ((dnspacket.header->get_qr() == 1) ? "R" : "Q") << " ";
+    cout << dnspacket.header->qd_count << "/";
+    cout << dnspacket.header->an_count << "/";
+    cout << dnspacket.header->ns_count << "/";
+    cout << dnspacket.header->ar_count << ")" << endl;
 }
 
 void questions_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
@@ -330,7 +339,7 @@ void questions_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) 
         *offset += 2; // always 2 bytes for both question type and class 
 
         if (!strcmp(qtype, "UNKNWN")) {
-            dnspacket->questions.push_back("Record type not supported\n");
+            // dnspacket->questions.push_back("Record type not supported\n");
             *offset += 2;
             continue;
         }
@@ -418,7 +427,7 @@ int process_sections(int mode, DnsPacket *dnspacket, const u_char *packet, int *
         string data = process_dns_record(dnspacket, record, packet, offset);
 
         if (!data.compare("CONTINUE")) {
-            storageStream->push_back("Record type not supported\n");
+            // storageStream->push_back("Record type not supported\n");
             continue;
         }
 
@@ -448,6 +457,44 @@ int process_sections(int mode, DnsPacket *dnspacket, const u_char *packet, int *
     }
 
     return RET_OK;
+}
+
+set<string> load_file(const string& filename) {
+    set<string> output;
+
+    if (!filename.empty()) {
+        ifstream inputFile(filename);
+        string line;
+        if (inputFile.is_open()) {
+            while (getline(inputFile, line)) {
+                output.insert(line);
+            }
+            inputFile.close();
+        }
+    }
+
+    return output;
+}
+
+void update_data_files(const string& filename, const set<string>& seenData) {
+    if (!filename.empty()) {
+        set<string> savedData = load_file(filename);
+
+        if (savedData != seenData) {
+            ofstream outputFile;
+            outputFile.open(filename, ios::app);
+            // ofstream outputFile(filename);
+
+            if (outputFile.is_open()) {
+                for (const string& item : seenData) {
+                    if (savedData.find(item) == savedData.end()) {
+                        outputFile << item << endl;
+                    }
+                }
+                outputFile.close();
+            }
+        }
+    }
 }
 
 void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
@@ -512,17 +559,35 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
 
     offset += sizeof(dnshdr);
 
-    // Proceed to parse DNS records (questions, answers, etc.)
 
     // cout << "Offset before questions handler: " << offset << endl;
     // cout << "Starting to process packet 0x" << hex << setw(4) << setfill('0') << dnspacket->header->id << dec << " with source port: " << dnspacket->header->src_port << endl; 
 
+    if (!config.verbose) {
+        display_dns_packet_short(*dnspacket);
+        return;
+    }
+
+    // Proceed to parse DNS records (questions, answers, etc.)
     questions_handler(dnspacket, packet, &offset);
     process_sections(MODE_ANSWERS, dnspacket, packet, &offset);
     process_sections(MODE_AUTHORITY, dnspacket, packet, &offset);
     process_sections(MODE_ADDITIONAL, dnspacket, packet, &offset);
 
-    display_dns_packet(*dnspacket, config.verbose);
+    display_dns_packet_verbose(*dnspacket);
+
+    // cout << "########## Seen domain names" << endl;
+    // for (const string& s : seenDomainNames) {
+    //     cout << s << endl;
+    // }
+
+    if (!config.domainsfile.empty()) {
+        update_data_files(config.domainsfile, seenDomainNames);
+    }
+
+    if (!config.translationsfile.empty()) {
+        update_data_files(config.translationsfile, seenTranslations);
+    }
 
     delete dnspacket;
 }
@@ -530,45 +595,6 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
 void signal_handler(int signum) {
     pcap_breakloop(handle); 
 }
-
-set<string> load_file(const string& filename) {
-    set<string> output;
-
-    if (!filename.empty()) {
-        ifstream inputFile(filename);
-        string line;
-        if (inputFile.is_open()) {
-            while (getline(inputFile, line)) {
-                output.insert(line);
-            }
-            inputFile.close();
-        }
-    }
-
-    return output;
-}
-
-void save_new_data(const string& filename, const set<string>& seenData) {
-    if (!filename.empty()) {
-        set<string> savedData = load_file(filename);
-
-        if (savedData != seenData) {
-            ofstream outputFile;
-            outputFile.open(filename, ios::app);
-            // ofstream outputFile(filename);
-
-            if (outputFile.is_open()) {
-                for (const string& item : seenData) {
-                    if (savedData.find(item) == savedData.end()) {
-                        outputFile << item << endl;
-                    }
-                }
-                outputFile.close();
-            }
-        }
-    }
-}
-
 
 int main(int argc, char* argv[]) {
 
@@ -584,8 +610,6 @@ int main(int argc, char* argv[]) {
     struct bpf_program fp;
     bpf_u_int32 net;
 
-    cout << "segfault\n";
-
     if (!config.interface.empty()) {
         handle = pcap_open_live(config.interface.c_str(), BUFSIZ, 1, 1000, errbuf);
         pcap_geterr(handle);
@@ -598,6 +622,11 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    if (handle == nullptr) {
+        fprintf(stderr, "Something went wrong: %s\n", errbuf);
+        exit(EXIT_FAILURE);
+    }
+
     if (pcap_compile(handle, &fp, filter, 0, net) == -1) {
         fprintf(stderr, "Error compiling filter: %s\n", pcap_geterr(handle));
         exit(EXIT_FAILURE);
@@ -605,11 +634,6 @@ int main(int argc, char* argv[]) {
 
     if (pcap_setfilter(handle, &fp) == -1) {
 	    fprintf(stderr, "Error setting filter: %s\n", pcap_geterr(handle));
-        exit(EXIT_FAILURE);
-    }
-
-    if (handle == nullptr) {
-        fprintf(stderr, "Something went wrong: %s\n", errbuf);
         exit(EXIT_FAILURE);
     }
 
@@ -630,14 +654,6 @@ int main(int argc, char* argv[]) {
     // Free the compiled filter
     pcap_freecode(&fp); 
     pcap_close(handle);
-
-    if (!config.domainsfile.empty()) {
-        save_new_data(config.domainsfile, seenDomainNames);
-    }
-
-    if (!config.translationsfile.empty()) {
-        save_new_data(config.translationsfile, seenTranslations);
-    }
 
     return 0;
 }

@@ -22,3 +22,6 @@ DNS MX:
 
 AUTHORITY SECTION:
     dig google.com NS @8.8.8.8
+
+Massive check (additionals):
+    dig google.com NS @a.gtld-servers.net

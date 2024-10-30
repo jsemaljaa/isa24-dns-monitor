@@ -1,6 +1,13 @@
-//
-// Created by Alina Vinogradova on 9/22/2024.
-//
+/*
+ * Project: DNS Monitor
+ *
+ * parameters.hpp
+ * Created on 09/22/2024
+ * 
+ * @brief Declarations for program arguments parsing mechanism  
+ * 
+ * @author Alina Vinogradova <xvinog00@vutbr.cz>
+*/
 
 #ifndef PARAMETERS_H
 #define PARAMETERS_H
@@ -18,6 +25,12 @@ typedef struct parameters {
     std::string translationsfile;
 } parameters_t;
 
+/*
+ * @brief Parse program arguments
+ * @param argc - arguments count
+ * @param argv - arguments
+ * @return Parameters data structure
+*/
 parameters_t parse(int argc, char* argv[]);
 
 #endif //PARAMETERS_H

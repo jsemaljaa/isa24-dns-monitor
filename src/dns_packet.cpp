@@ -1,9 +1,16 @@
-//
-// Created by Alina Vinogradova on 10/15/2024.
-//
+/*
+ * Project: DNS Monitor
+ *
+ * dns_packet.cpp
+ * Created on 15/10/2024
+ * 
+ * @brief Implementation of helper methods to extract data from different network layers
+ *
+ * @author Alina Vinogradova <xvinog00@vutbr.cz>
+*/
 
-#include "dns_packet.h"
 
+#include "dns_packet.hpp"
 
 DnsHeader::DnsHeader(dns_header_t *dnsh, struct udphdr *udph, struct ip *iph, struct ip6_hdr *ip6hdr, bool ipv6, const struct timeval ts) {
     id = ntohs(dnsh->id);
@@ -27,7 +34,6 @@ DnsHeader::DnsHeader(dns_header_t *dnsh, struct udphdr *udph, struct ip *iph, st
 
     src_port = ntohs(udph->source);
     dst_port = ntohs(udph->dest);
-    
 
     timestamp = convert_timestamp(ts);
 }

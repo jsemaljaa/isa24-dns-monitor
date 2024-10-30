@@ -1,8 +1,15 @@
-//
-// Created by Alina Vinogradova on 9/22/2024.
-//
+/*
+ * Project: DNS Monitor
+ *
+ * parameters.cpp
+ * Created on 09/22/2024
+ * 
+ * @brief Implementation of program arguments parsing mechanism  
+ * 
+ * @author Alina Vinogradova <xvinog00@vutbr.cz>
+*/
 
-#include "parameters.h"
+#include "parameters.hpp"
 
 parameters_t parse(int argc, char* argv[]) {
     parameters_t p;

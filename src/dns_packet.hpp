@@ -1,8 +1,16 @@
-//
-// Created by Alina Vinogradova on 10/14/2024.
-//
-#ifndef DNS_HEADER_H
-#define DNS_HEADER_H
+/*
+ * Project: DNS Monitor
+ *
+ * dns_packet.h
+ * Created on 14/10/2024
+ * 
+ * @brief Declarations of structures to extract and process data from different network layers
+ *
+ * @author Alina Vinogradova <xvinog00@vutbr.cz>
+*/
+
+#ifndef DNS_PACKET_H
+#define DNS_PACKET_H
 
 #include <cstdint>
 #include <ctime>
@@ -149,16 +157,75 @@ class DnsHeader {
 
         const u_char *DNSstream;
         
+        /*
+        * @brief Constructor for DNS Header class
+        * @param dnsh - raw DNS header extracted from captured packed
+        * @param udph - raw UDP header extracted from captured packed
+        * @param iph  - raw IPv4 header extracted from captured packed
+        * @param iph6_hdr - raw IPv6 header extracted from captured packed
+        * @param ipv6 - boolean to switch between IPv4 and IPv6 header
+        * @param ts - raw timestamp extracted from captured packet
+        * @return DnsHeader instance
+        */
         DnsHeader(dns_header_t *dnsh, struct udphdr *udph, struct ip *iph, struct ip6_hdr *ip6hdr, bool ipv6, const struct timeval ts);
+        
+        /*
+        * @brief Extract QR flag by masking 
+        * @return 16 bit value with QR flag
+        */
         uint16_t get_qr();
+
+        /*
+        * @brief Extract OPCODE flag by masking 
+        * @return 16 bit value with OPCODE flag
+        */
 		uint16_t get_opcode();
-		uint16_t get_aa();
-		uint16_t get_tc();
-		uint16_t get_rd();
+		
+        /*
+        * @brief Extract AA flag by masking 
+        * @return 16 bit value with AA flag
+        */
+        uint16_t get_aa();
+		
+        /*
+        * @brief Extract TC flag by masking 
+        * @return 16 bit value with TC flag
+        */
+        uint16_t get_tc();
+		
+        /*
+        * @brief Extract RD flag by masking 
+        * @return 16 bit value with RD flag
+        */
+        uint16_t get_rd();
+
+        /*
+        * @brief Extract RA flag by masking 
+        * @return 16 bit value with RA flag
+        */
 		uint16_t get_ra();
-		uint16_t get_ad();
-		uint16_t get_cd();
-		uint16_t get_rcode();
+		
+        /*
+        * @brief Extract AD flag by masking 
+        * @return 16 bit value with AD flag
+        */
+        uint16_t get_ad();
+		
+        /*
+        * @brief Extract CD flag by masking 
+        * @return 16 bit value with CD flag
+        */
+        uint16_t get_cd();
+		
+        /*
+        * @brief Extract RCODE flag by masking 
+        * @return 16 bit value with RCODE flag
+        */
+        uint16_t get_rcode();
+
+        /*
+        * @brief DnsHeader destructor 
+        */
         ~DnsHeader();
 
     private:
@@ -179,4 +246,4 @@ class DnsPacket {
         DnsPacket();
 };
 
-#endif //DNS_HEADER_H
+#endif //DNS_PACKET_H

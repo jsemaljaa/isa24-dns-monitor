@@ -2,6 +2,7 @@
 
 CC = g++
 CFLAGS = -Wall -Wextra -pedantic -g -fsanitize=address
+# CFLAGS = -Wall -Wextra -pedantic
 TARGET = dns-monitor
 
 # files

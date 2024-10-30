@@ -1,6 +1,13 @@
-//
-// Created by Alina Vinogradova on 9/21/2024.
-//
+/*
+ * Project: DNS Monitor
+ *
+ * dns-monitor.hpp
+ * Created on 21/09/2024
+ * 
+ * @brief Declarations of values and functions needed for data extraction
+ *
+ * @author Alina Vinogradova <xvinog00@vutbr.cz>
+*/
 
 #ifndef DNS_MONITOR_H
 #define DNS_MONITOR_H
@@ -16,8 +23,8 @@
 #include <csignal>
 
 // Project headers
-#include "parameters.h"
-#include "dns_packet.h"
+#include "parameters.hpp"
+#include "dns_packet.hpp"
 
 #define SIZE_ETHERNET_HDR 14
 #define MIN_DNS_HDR_SIZE 12
