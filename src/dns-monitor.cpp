@@ -6,9 +6,15 @@
 
 using namespace std;
 
+pcap_t *handle;
+
 parameters_t config;
+
 // Set of unique domain names seen during captured DNS communication
 set<string> seenDomainNames;
+
+// Set of unique domain to IPv4/6 translations seen during captured DNS communication
+set<string> seenTranslations;
 
 // https://en.wikipedia.org/wiki/List_of_DNS_record_types
 const char *parse_dns_type(uint16_t type) {
@@ -131,8 +137,12 @@ string process_dns_record(DnsPacket *dnspacket, dns_resource_record_t *record, c
         } case DNS_SOA: { // Start of authority
             string mname = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
             seenDomainNames.insert(mname);
+
+            // https://www.cloudflare.com/learning/dns/dns-records/dns-soa-record/
+
+            // rname represents the administrator's email address,
+            // so we don't want to save it in seen domain names
             string rname = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
-            seenDomainNames.insert(rname);
 
             dns_soa_record_t *soa = (dns_soa_record_t *)malloc(sizeof(dns_soa_record_t));
             if (soa == NULL) {
@@ -168,9 +178,10 @@ string process_dns_record(DnsPacket *dnspacket, dns_resource_record_t *record, c
 
             *offset += 2;
             preference = ntohs(preference);
-
+            // https://www.cloudflare.com/learning/dns/dns-records/dns-mx-record/
+            // The same as in SOA record, this string is a mail server, so we want to display it,
+            // But we don't want to save it in domain names 
             string mail = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
-            seenDomainNames.insert(mail);
             data = to_string(preference) + " " + mail;
                 
             break;
@@ -314,11 +325,13 @@ void questions_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) 
         string domain = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
         seenDomainNames.insert(domain);
         
+        // Extract question type
         const char *qtype = parse_dns_type(ntohs(*(uint16_t*)(packet + *offset)));
         *offset += 2; // always 2 bytes for both question type and class 
 
         if (!strcmp(qtype, "UNKNWN")) {
             dnspacket->questions.push_back("Record type not supported\n");
+            *offset += 2;
             continue;
         }
         
@@ -396,7 +409,6 @@ int process_sections(int mode, DnsPacket *dnspacket, const u_char *packet, int *
     for (int i = 0; i < n; i++) {
         // Parse domain name
         string domain_name = parse_dns_string(packet, offset, dnspacket->header->DNSstream);
-        seenDomainNames.insert(domain_name);
 
         // Parse record data (type, class, ttl, data length, data)
         dns_resource_record_t *record = extract_record(packet, offset);
@@ -412,6 +424,14 @@ int process_sections(int mode, DnsPacket *dnspacket, const u_char *packet, int *
 
         if (!data.compare("ERROROCCURED")) {
             return RET_ERR;
+        }
+
+        // Only saving a domain, if the record type is supported by a program
+        seenDomainNames.insert(domain_name);
+
+        if (record->type == DNS_A || record->type == DNS_AAAA) {
+            string translation = domain_name + " " + data;
+            seenTranslations.insert(translation);
         }
 
         // Prepare to store the formatted answer string
@@ -441,17 +461,50 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
         cout <<" Truncated packet: " << header->len << " / " << header->caplen << " bytes" << endl;
     }
 
-    offset += SIZE_ETHERNET_HDR;
-    struct ip *iph = (struct ip *)(packet + offset);
+    // https://github.com/jsemaljaa/ipk22-projects/blob/main/Proj2/ipk-sniffer.c
+    struct ether_header *etherhdr = (struct ether_header *)packet;
+    uint16_t etherType = ntohs(etherhdr->ether_type);
 
-    offset += iph->ip_hl * 4;
+    // offset += SIZE_ETHERNET_HDR;
+    // struct ip *iph = (struct ip *)(packet + offset);
+
+    struct ip *iphdr;
+    struct ip6_hdr *ip6hdr;
+
+    bool ipv6 = false;
+
+    const int ethhdrSize = sizeof(struct ether_header);
+
+    offset += ethhdrSize;
+
+    switch (etherType) {
+        case ETHERTYPE_ARP:
+            // no need any data, skip
+            // offset += ethhdrSize;
+            break;
+        case ETHERTYPE_IP:
+            iphdr = (struct ip *)(packet + offset);
+            // IPv4 doesn't have a fixed header length, minimum 20 bytes and maximum 60 bytes
+            // ipvhdrLen = iphdr->ip_hl * 4;
+            offset += iphdr->ip_hl * 4;
+            break;
+        case ETHERTYPE_IPV6: 
+            ip6hdr = (struct ip6_hdr *)(packet + offset);
+            ipv6 = true;
+            // IPv6 has 40 bytes as fixed header length
+            // ipvhdrLen = 40;
+            offset += 40;
+            break;
+    }
+
+    // offset += iph->ip_hl * 4;
     struct udphdr *udph = (struct udphdr *)(packet + offset);
     
     offset += sizeof(udph);
     dns_header_t *dnshdr = (dns_header_t *)(packet + offset);
 
     // Build DNS header from acquired data
-    DnsHeader dnsheader = DnsHeader(dnshdr, udph, iph, header->ts);
+    DnsHeader dnsheader = DnsHeader(dnshdr, udph, iphdr, ip6hdr, ipv6, header->ts);
     dnsheader.DNSstream = &packet[offset];
 
     DnsPacket *dnspacket = new DnsPacket();
@@ -461,69 +514,89 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
 
     // Proceed to parse DNS records (questions, answers, etc.)
 
-    questions_handler(dnspacket, packet, &offset);
+    // cout << "Offset before questions handler: " << offset << endl;
+    // cout << "Starting to process packet 0x" << hex << setw(4) << setfill('0') << dnspacket->header->id << dec << " with source port: " << dnspacket->header->src_port << endl; 
 
+    questions_handler(dnspacket, packet, &offset);
     process_sections(MODE_ANSWERS, dnspacket, packet, &offset);
     process_sections(MODE_AUTHORITY, dnspacket, packet, &offset);
     process_sections(MODE_ADDITIONAL, dnspacket, packet, &offset);
 
-    display_dns_packet(*dnspacket, true);
+    display_dns_packet(*dnspacket, config.verbose);
 
-    set<string> savedDomains;
-    
-    if (!config.domainsfile.empty()) {
-        ifstream inputFile(config.domainsfile);
+    delete dnspacket;
+}
+
+void signal_handler(int signum) {
+    pcap_breakloop(handle); 
+}
+
+set<string> load_file(const string& filename) {
+    set<string> output;
+
+    if (!filename.empty()) {
+        ifstream inputFile(filename);
         string line;
         if (inputFile.is_open()) {
             while (getline(inputFile, line)) {
-                savedDomains.insert(line);
+                output.insert(line);
             }
+            inputFile.close();
         }
+    }
 
-        if (!(savedDomains == seenDomainNames)) {
-            ofstream outputFile(config.domainsfile);
+    return output;
+}
+
+void save_new_data(const string& filename, const set<string>& seenData) {
+    if (!filename.empty()) {
+        set<string> savedData = load_file(filename);
+
+        if (savedData != seenData) {
+            ofstream outputFile;
+            outputFile.open(filename, ios::app);
+            // ofstream outputFile(filename);
+
             if (outputFile.is_open()) {
-                for (const string& domain : seenDomainNames) {
-                    // Only want to insert domains that aren't yet present in file
-                    if (savedDomains.find(domain) == savedDomains.end()) {
-                        outputFile << domain << endl;
+                for (const string& item : seenData) {
+                    if (savedData.find(item) == savedData.end()) {
+                        outputFile << item << endl;
                     }
                 }
                 outputFile.close();
             }
         }
     }
-
-    delete dnspacket;
 }
+
 
 int main(int argc, char* argv[]) {
 
     // cout << "Byte order: " << (__BYTE_ORDER == __BIG_ENDIAN ? "BIG_ENDIAN" : "LITTLE_ENDIAN") << endl;
     config = get_app_config(argc, argv);
 
-    pcap_t *handle = nullptr;
-    char errbuf[PCAP_ERRBUF_SIZE];
+    handle = nullptr;
+    char errbuf[PCAP_ERRBUF_SIZE];    
+
+    // Preparing PCAP handle
+    /* PCAP FILTER */
+    char filter[] = "udp port 53";
+    struct bpf_program fp;
+    bpf_u_int32 net;
+
+    cout << "segfault\n";
 
     if (!config.interface.empty()) {
         handle = pcap_open_live(config.interface.c_str(), BUFSIZ, 1, 1000, errbuf);
+        pcap_geterr(handle);
     } else if (!config.pcapfile.empty()) {
-        // handle = pcap_open_offline(pcapfile, errbuf);
+        handle = pcap_open_offline(config.pcapfile.c_str(), errbuf);
+        pcap_geterr(handle);
     } else {
         // Technically not possible, but to avoid unexpected behaviour
         cerr << "Error: You must specify either an interface (-i) or a PCAP file (-p). (but not both)\n";
         exit(EXIT_FAILURE);
     }
-
-    if (handle == nullptr) {
-        fprintf(stderr, "Something went wrong: %s\n", errbuf);
-        exit(EXIT_FAILURE);
-    }
-
-    /* PCAP FILTER */
-    char filter[] = "udp port 53";
-    struct bpf_program fp;
-    bpf_u_int32 net;
 
     if (pcap_compile(handle, &fp, filter, 0, net) == -1) {
         fprintf(stderr, "Error compiling filter: %s\n", pcap_geterr(handle));
@@ -535,7 +608,36 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    pcap_loop(handle, -1, packet_handler, nullptr);
+    if (handle == nullptr) {
+        fprintf(stderr, "Something went wrong: %s\n", errbuf);
+        exit(EXIT_FAILURE);
+    }
+
+    if (!config.interface.empty()) {
+        pcap_loop(handle, -1, packet_handler, nullptr);
+    } else {
+        struct pcap_pkthdr header;
+        const u_char *packet;
+        while ((packet = pcap_next(handle, &header)) != nullptr) {
+            packet_handler(nullptr, &header, packet);
+        }
+    }
+
+    // Register the signal handler
+    signal(SIGINT, signal_handler);
+
+    // Cleaning up after receiving SIGINT signal
+    // Free the compiled filter
+    pcap_freecode(&fp); 
+    pcap_close(handle);
+
+    if (!config.domainsfile.empty()) {
+        save_new_data(config.domainsfile, seenDomainNames);
+    }
+
+    if (!config.translationsfile.empty()) {
+        save_new_data(config.translationsfile, seenTranslations);
+    }
 
     return 0;
 }

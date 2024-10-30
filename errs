@@ -6,3 +6,34 @@ in the start of authority:
 
 [1]    19304 illegal hardware instruction  sudo ./dns-monitor -i enp5s0
 
+
+weird output:
+##########################
+Timestamp: 2024-10-30 17:19:41
+SrcIP: 192.168.0.1
+DstIP: 192.168.0.105
+SrcPort: UDP/53
+DstPort: UDP/49131
+Identifier: 0xf1bf
+Flags: QR=1, OPCODE=0, AA=0, TC=0, RD=1, RA=1, AD=0, CD=0, RCODE=0
+
+[Question Section]
+Record type not supported
+
+[Answer Section]
+Record type not supported
+
+youtube-uilgoogle��-A��-��$n�-��$��-��%n�-��$N�- *P@
+                                                    .youtube-ui.l.google.com. 288 IN AAAA 2a00:1450:4014:80e::200e
+
+[Additional Section]
+youtube-ui.l.google.com. 288 IN AAAA 2a00:1450:4014:80f::200e
+youtube-ui.l.google.com. 288 IN AAAA 2a00:1450:4014:80a::200e
+Record type not supported
+Record type not supported
+Record type not supported
+Record type not supported
+Record type not supported
+Record type not supported
+Record type not supported
+##########################

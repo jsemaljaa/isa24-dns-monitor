@@ -5,7 +5,7 @@
 #include "dns_packet.h"
 
 
-DnsHeader::DnsHeader(dns_header_t *dnsh, struct udphdr *udph, struct ip *iph, const struct timeval ts) {
+DnsHeader::DnsHeader(dns_header_t *dnsh, struct udphdr *udph, struct ip *iph, struct ip6_hdr *ip6hdr, bool ipv6, const struct timeval ts) {
     id = ntohs(dnsh->id);
     flags = ntohs(dnsh->flags);
     qd_count = ntohs(dnsh->qd_count);
@@ -13,14 +13,28 @@ DnsHeader::DnsHeader(dns_header_t *dnsh, struct udphdr *udph, struct ip *iph, co
     ns_count = ntohs(dnsh->ns_count);
     ar_count = ntohs(dnsh->ar_count);
 
-    inet_ntop(AF_INET, &(iph->ip_src), src_ip, INET_ADDRSTRLEN);
-    inet_ntop(AF_INET, &(iph->ip_dst), dst_ip, INET_ADDRSTRLEN);
+    if (!ipv6) {
+        src_ip = new char[INET_ADDRSTRLEN];
+        dst_ip = new char[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &(iph->ip_src), src_ip, INET_ADDRSTRLEN);
+        inet_ntop(AF_INET, &(iph->ip_dst), dst_ip, INET_ADDRSTRLEN);
+    } else {
+        src_ip = new char[INET6_ADDRSTRLEN];
+        dst_ip = new char[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &(ip6hdr->ip6_src), src_ip, INET6_ADDRSTRLEN);
+        inet_ntop(AF_INET6, &(ip6hdr->ip6_dst), dst_ip, INET6_ADDRSTRLEN);
+    }
 
     src_port = ntohs(udph->source);
     dst_port = ntohs(udph->dest);
     
 
     timestamp = convert_timestamp(ts);
+}
+
+DnsHeader::~DnsHeader() {
+    delete[] src_ip;
+    delete[] dst_ip;
 }
 
 std::string DnsHeader::convert_timestamp(const struct timeval ts) {
@@ -32,7 +46,6 @@ std::string DnsHeader::convert_timestamp(const struct timeval ts) {
 
     return oss.str();
 }
-
 
 
 uint16_t DnsHeader::get_qr() {

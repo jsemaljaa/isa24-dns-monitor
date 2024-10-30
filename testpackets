@@ -1,5 +1,5 @@
 DNS SRV: 
-    dig _xmpp-client._tcp.jabber.org. SRV
+    dig _xmpp-client._tcp.jabber.org. SRV @1.1.1.1
 
 DNS NS: + 
     dig example.com NS @8.8.8.8

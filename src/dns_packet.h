@@ -6,9 +6,13 @@
 
 #include <cstdint>
 #include <ctime>
+
+// Networking (headers, macros, etc.)
 #include <arpa/inet.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
+#include <netinet/ip6.h>
+
 #include <string> 
 #include <sstream>
 #include <iomanip>
@@ -133,8 +137,10 @@ class DnsHeader {
         uint16_t ns_count;
         uint16_t ar_count;
 
-        char src_ip[INET_ADDRSTRLEN];
-        char dst_ip[INET_ADDRSTRLEN];
+        // char src_ip[INET_ADDRSTRLEN];
+        // char dst_ip[INET_ADDRSTRLEN];
+        char *src_ip;
+        char *dst_ip;
 
         uint16_t src_port;
         uint16_t dst_port;
@@ -143,7 +149,7 @@ class DnsHeader {
 
         const u_char *DNSstream;
         
-        DnsHeader(dns_header_t *dnsh, struct udphdr *udph, struct ip *iph, const struct timeval ts);
+        DnsHeader(dns_header_t *dnsh, struct udphdr *udph, struct ip *iph, struct ip6_hdr *ip6hdr, bool ipv6, const struct timeval ts);
         uint16_t get_qr();
 		uint16_t get_opcode();
 		uint16_t get_aa();
@@ -153,6 +159,7 @@ class DnsHeader {
 		uint16_t get_ad();
 		uint16_t get_cd();
 		uint16_t get_rcode();
+        ~DnsHeader();
 
     private:
         // CAUTION: convert timestamp throws segfault sometimes
@@ -168,8 +175,6 @@ class DnsPacket {
         std::vector<std::string> answers;
         std::vector<std::string> authorities;
         std::vector<std::string> additionals;
-
-
 
         DnsPacket();
 };

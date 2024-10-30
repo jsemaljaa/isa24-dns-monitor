@@ -5,15 +5,15 @@
 #ifndef DNS_MONITOR_H
 #define DNS_MONITOR_H
 
-#include <cstdint>
 // Networking
 #include <pcap.h>
 #include <netinet/ip6.h>
+// ethernet header
 #include <netinet/if_ether.h>
 
 #include <cstring>
 #include <fstream>
-#include <iostream>
+#include <csignal>
 
 // Project headers
 #include "parameters.h"
