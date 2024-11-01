@@ -5,7 +5,7 @@ build/
 *.o
 dns-monitor
 .vscode/
-wslapps
-test.sh
-doc
-errs
+docs/wslapps
+docs/test.sh
+docs/doc
+docs/errs
