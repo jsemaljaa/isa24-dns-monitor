@@ -12,10 +12,8 @@
 
 #include "dns-monitor.hpp"
 
-using namespace std;
-
+// Global configurations of the program we will need to access at different points
 pcap_t *handle;
-
 parameters_t config;
 
 // Set of unique domain names seen during captured DNS communication
@@ -24,90 +22,37 @@ set<string> seenDomainNames;
 // Set of unique domain to IPv4/6 translations seen during captured DNS communication
 set<string> seenTranslations;
 
-// https://en.wikipedia.org/wiki/List_of_DNS_record_types
-const char *parse_dns_type(uint16_t type) {
-    switch (type) {
-    case DNS_A:
-        return "A";
-    case DNS_NS:
-        return "NS";
-    case DNS_CNAME:
-        return "CNAME";
-    case DNS_SOA:
-        return "SOA";
-    case DNS_MX:
-        return "MX";
-    case DNS_AAAA:
-        return "AAAA";
-    case DNS_SRV:
-        return "SRV";
-    default:
-        return "UNKNWN";
-    }
-}
-
-const char *parse_dns_class(uint16_t qclass) {
-    switch (qclass) {
-    case 1:
-        return "IN";
-    default:
-        return "UNKNWN";
-    }
-}
-
 parameters_t get_app_config(int argc, char *argv[]) {
     parameters config = parse(argc, argv);
     return config;
 }
 
 string parse_dns_string(const u_char *stream, int *offset, const u_char *DNSstream) {
-    /*
-        Parses a domain name from a DNS packet stream.
-
-        Domain names are represented as a sequence of labels, where each label consists of:
-            - A length octet specifying the number of characters in the label.
-            - The characters of the label.
-
-        This function handles both standard labels and compressed labels (using pointers).
-
-        Sources:
-            - https://mislove.org/teaching/cs4700/spring11/handouts/project1-primer.pdf
-              chapter 5 DNS Packet Compression 
-            - https://spathis.medium.com/how-dns-got-its-messages-on-diet-c49568b234a2
-
-    */
-
     string domain;
 
     while (true) {
         uint8_t len = stream[*offset]; // Get first byte: could be the length of the current label or compression pointer
         (*offset)++;
 
-        // uint8_t firstByte = (len >> 8) & 0xFF;
-        // uint8_t secondByte = len & 0xFF;
-
         if (len == 0) {
             // End of the domain name
             break;
         } else if (len >= 0xC0) {
             // Compression pointer encountered
-            //  - The first two bits (0b1100000000000000) indicate a pointer.
-            //  - The remaining 14 (0b00XXXXXXXXXXXXXX) bits form an offset within the DNS packet.
+            //  - The first two bits (11000000 00000000) indicate a pointer
+            //  - The remaining 14 (00XXXXXX XXXXXXXX) bits form an offset within the DNS packet
             
             // Get next byte 
             uint8_t nextByte = stream[*offset];
             (*offset)++;
 
-            // Combine the two bytes to get the full 14-bit offset
+            // Combine the two bytes to get the full 14-bit of offset
             uint16_t bytePair = (len << 8) | nextByte;
 
             // Mask out the pointer bits (0b00XXXXXXXXXXXXXX)
             int pointerOffset = bytePair & 0x3FFF; 
 
-            // if we got a compression pointer and extracted the place where it points to
-            // then we're starting to parse domain name from the beginning of DNS packet stream with given pointer offset
-
-            // Come back and recursively parse domain name starting at the pointer offset
+            // Recursively parse domain name starting at the pointer offset
             domain += parse_dns_string(DNSstream, &pointerOffset, DNSstream);
             
             break; // Pointer is always the last label
@@ -239,88 +184,6 @@ string process_dns_record(DnsPacket *dnspacket, dns_resource_record_t *record, c
     return data;
 }
 
-void display_dns_packet_verbose(DnsPacket dnspacket) {
-
-    // Don't display a packet, if every single record in this packet is not supported 
-    if (dnspacket.questions.empty() && dnspacket.answers.empty() && dnspacket.authorities.empty() && dnspacket.additionals.empty())
-        return;
-        
-    cout << "Timestamp: " << dnspacket.header->timestamp << endl;
-    cout << "SrcIP: " << dnspacket.header->src_ip << endl;
-    cout << "DstIP: " << dnspacket.header->dst_ip << endl;
-    cout << "SrcPort: UDP/" << dnspacket.header->src_port << endl;
-    cout << "DstPort: UDP/" << dnspacket.header->dst_port << endl;
-    cout << "Identifier: 0x" << hex << uppercase << setw(4) << setfill('0') << dnspacket.header->id << dec << endl;
-    cout << "Flags: ";
-        cout << "QR=" << dnspacket.header->get_qr() << ", ";
-        cout << "OPCODE=" << dnspacket.header->get_opcode() << ", ";
-        cout << "AA=" << dnspacket.header->get_aa() << ", ";
-        cout << "TC=" << dnspacket.header->get_tc() << ", ";
-        cout << "RD=" << dnspacket.header->get_rd() << ", ";
-        cout << "RA=" << dnspacket.header->get_ra() << ", ";
-        cout << "AD=" << dnspacket.header->get_ad() << ", ";
-        cout << "CD=" << dnspacket.header->get_cd() << ", ";
-        cout << "RCODE=" << dnspacket.header->get_rcode() << endl;
-        
-    cout << endl; 
-
-    if (!dnspacket.questions.empty()) {
-        cout << "[Question Section]" << endl;
-        for (const std::string& q : dnspacket.questions) {
-            if (!q.empty()) {
-                cout << q;
-            } 
-        }
-        if (!(dnspacket.answers.empty() && dnspacket.authorities.empty() && dnspacket.additionals.empty())) {
-            cout << endl;
-        }
-    }
-
-    if (!dnspacket.answers.empty()) {
-        cout << "[Answer Section]" << endl;
-        for (const string &a : dnspacket.answers) {
-            if (!a.empty()) {
-                cout << a;
-            }
-        }
-        if (!(dnspacket.authorities.empty() && dnspacket.additionals.empty())) {
-            cout << endl;
-        }
-    }
-
-    if (!dnspacket.authorities.empty()) {
-        cout << "[Authority Section]" << endl;
-        for (const string &au : dnspacket.authorities) {
-            if (!au.empty()) {
-                cout << au;
-            } 
-        }
-        if (!(dnspacket.additionals.empty())) {
-            cout << endl;
-        }
-    }
-
-    if (!dnspacket.additionals.empty()) {
-        cout << "[Additional Section]" << endl;
-        for (const string &ad : dnspacket.additionals) {
-            if (!ad.empty()) {
-                cout << ad;
-            } 
-        }
-    }
-    cout << "====================" << endl;
-}
-
-void display_dns_packet_short(DnsPacket dnspacket) {
-    cout << dnspacket.header->timestamp << " ";
-    cout << dnspacket.header->src_ip << " -> " << dnspacket.header->dst_ip << " ";
-    cout << "(" << ((dnspacket.header->get_qr() == 1) ? "R" : "Q") << " ";
-    cout << dnspacket.header->qd_count << "/";
-    cout << dnspacket.header->an_count << "/";
-    cout << dnspacket.header->ns_count << "/";
-    cout << dnspacket.header->ar_count << ")" << endl;
-}
-
 void questions_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) {
     for (int i = 0; i < dnspacket->header->qd_count; i++) {
         // avoiding using structure simmilar to dns header because domain name
@@ -335,7 +198,7 @@ void questions_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) 
         seenDomainNames.insert(domain);
         
         // Extract question type
-        const char *qtype = parse_dns_type(ntohs(*(uint16_t*)(packet + *offset)));
+        const char *qtype = PARSE_DNS_TYPE(ntohs(*(uint16_t*)(packet + *offset)));
         *offset += 2; // always 2 bytes for both question type and class 
 
         if (!strcmp(qtype, "UNKNWN")) {
@@ -344,7 +207,7 @@ void questions_handler(DnsPacket *dnspacket, const u_char *packet, int *offset) 
             continue;
         }
         
-        const char *qclass = parse_dns_class(ntohs(*(uint16_t*)(packet + *offset)));
+        const char *qclass = PARSE_DNS_CLASS(ntohs(*(uint16_t*)(packet + *offset)));
         *offset += 2;
 
         ostringstream oss;
@@ -395,9 +258,6 @@ dns_resource_record_t *extract_record(const u_char *packet, int *offset) {
     return record;
 }
 
-// mode == 0 -> answers section
-// mode == 1 -> authority section
-// mode == 2 -> additional section
 int process_sections(int mode, DnsPacket *dnspacket, const u_char *packet, int *offset) {
     int n;
     vector<string>* storageStream;
@@ -411,8 +271,6 @@ int process_sections(int mode, DnsPacket *dnspacket, const u_char *packet, int *
     } else if (mode == MODE_ADDITIONAL) {
         storageStream = &dnspacket->additionals;
         n = dnspacket->header->ar_count;
-    } else {
-        return RET_ERR;
     }
     
     for (int i = 0; i < n; i++) {
@@ -447,7 +305,7 @@ int process_sections(int mode, DnsPacket *dnspacket, const u_char *packet, int *
         ostringstream ans;
 
         // Format the answer string and add it to the packet's answer list
-        ans << domain_name << " " << record->ttl << " " << parse_dns_class(record->class_) << " " << parse_dns_type(record->type) << " " << data << endl;
+        ans << domain_name << " " << record->ttl << " " << PARSE_DNS_CLASS(record->class_) << " " << PARSE_DNS_TYPE(record->type) << " " << data << endl;
         
         // Store record data to DNS packet
         storageStream->push_back(ans.str());
@@ -512,9 +370,6 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
     struct ether_header *etherhdr = (struct ether_header *)packet;
     uint16_t etherType = ntohs(etherhdr->ether_type);
 
-    // offset += SIZE_ETHERNET_HDR;
-    // struct ip *iph = (struct ip *)(packet + offset);
-
     struct ip *iphdr;
     struct ip6_hdr *ip6hdr;
 
@@ -570,16 +425,11 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
 
     // Proceed to parse DNS records (questions, answers, etc.)
     questions_handler(dnspacket, packet, &offset);
-    process_sections(MODE_ANSWERS, dnspacket, packet, &offset);
-    process_sections(MODE_AUTHORITY, dnspacket, packet, &offset);
-    process_sections(MODE_ADDITIONAL, dnspacket, packet, &offset);
+    EXEC(process_sections(MODE_ANSWERS, dnspacket, packet, &offset));
+    EXEC(process_sections(MODE_AUTHORITY, dnspacket, packet, &offset));
+    EXEC(process_sections(MODE_ADDITIONAL, dnspacket, packet, &offset));
 
     display_dns_packet_verbose(*dnspacket);
-
-    // cout << "########## Seen domain names" << endl;
-    // for (const string& s : seenDomainNames) {
-    //     cout << s << endl;
-    // }
 
     if (!config.domainsfile.empty()) {
         update_data_files(config.domainsfile, seenDomainNames);

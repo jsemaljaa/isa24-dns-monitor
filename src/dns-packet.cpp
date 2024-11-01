@@ -10,7 +10,7 @@
 */
 
 
-#include "dns_packet.hpp"
+#include "dns-packet.hpp"
 
 DnsHeader::DnsHeader(dns_header_t *dnsh, struct udphdr *udph, struct ip *iph, struct ip6_hdr *ip6hdr, bool ipv6, const struct timeval ts) {
     id = ntohs(dnsh->id);
