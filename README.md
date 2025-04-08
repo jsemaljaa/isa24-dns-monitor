@@ -1,6 +1,6 @@
 # dns-monitor: A DNS Monitoring Tool
 
-This project implements a program named `dns-monitor` that monitors and analyzes DNS traffic on your network. It can either capture live traffic from a specified interface or process pre-recorded data from a PCAP file.
+Tool to monitor and analyze DNS traffic on your network. It can capture live traffic from a specified interface or process pre-recorded data from a PCAP file.
 
 ## Features:
 
@@ -63,7 +63,7 @@ This project implements a program named `dns-monitor` that monitors and analyzes
 
 ## Implementation Scope:
 * This project focuses on DNS over UDP (UDP port 53) traffic.
-* It supports the following DNS record types: A, AAAA, NS, MX, SOA, CNAME, and SRV.
+* Supported DNS record types: A, AAAA, NS, MX, SOA, CNAME, and SRV.
 * Support for other record types (PTR, etc.) is not included.
 
 ## Contact
